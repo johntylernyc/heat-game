@@ -91,3 +91,36 @@ export {
   endReactPhase,
   executeReplenish,
 } from './engine.js';
+
+// Garage module (upgrade card drafting)
+export type {
+  UpgradeEffect,
+  ScrapEffect,
+  SuperCoolEffect,
+  SalvageEffect,
+  DirectPlayEffect,
+  RefreshEffect,
+  AdjustSpeedLimitEffect,
+  ReduceStressEffect,
+  SlipstreamBoostEffect,
+  GarageUpgradeType,
+  GarageUpgradeCard,
+  DraftDirection,
+  DraftPhase,
+  DraftPlayerState,
+  DraftState,
+  DraftConfig,
+  DraftPickAction,
+} from './garage/index.js';
+
+export {
+  DRAFT_ROUNDS,
+  DRAFT_ROUND_DIRECTIONS,
+  GARAGE_UPGRADE_CARDS,
+  ALL_GARAGE_UPGRADE_CARDS,
+  initDraft,
+  executeDraftPick,
+  getCurrentDrafter,
+  getPlayerDraftedCards,
+  buildDraftedDeck,
+} from './garage/index.js';
