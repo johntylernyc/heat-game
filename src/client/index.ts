@@ -1,8 +1,8 @@
 /**
- * Client-side game board UI module.
+ * Client-side UI module for Heat: Pedal to the Metal.
  *
- * Provides track rendering, car movement visualization, and game state overlay
- * for the Heat: Pedal to the Metal web client.
+ * Provides track rendering, car movement visualization, game state overlay,
+ * and React components for the player dashboard.
  */
 
 // Board (main entry point)
@@ -62,3 +62,31 @@ export {
   renderSlipstreamIndicator,
   getPhaseDisplay,
 } from './overlay.js';
+
+// Player Dashboard Components
+export { CardView } from './components/CardView.js';
+export type { CardViewProps } from './components/CardView.js';
+
+export { HandDisplay } from './components/HandDisplay.js';
+export type { HandDisplayProps } from './components/HandDisplay.js';
+
+export { PlayArea } from './components/PlayArea.js';
+export type { PlayAreaProps } from './components/PlayArea.js';
+
+export { GearSelector } from './components/GearSelector.js';
+export type { GearSelectorProps, GearTarget } from './components/GearSelector.js';
+
+export { EngineZone } from './components/EngineZone.js';
+export type { EngineZoneProps } from './components/EngineZone.js';
+
+export { PhaseControls } from './components/PhaseControls.js';
+export type { PhaseControlsProps } from './components/PhaseControls.js';
+
+export { PhaseIndicator } from './components/PhaseIndicator.js';
+export type { PhaseIndicatorProps } from './components/PhaseIndicator.js';
+
+export { DeckStatus } from './components/DeckStatus.js';
+export type { DeckStatusProps } from './components/DeckStatus.js';
+
+export { PlayerDashboard } from './components/PlayerDashboard.js';
+export type { PlayerDashboardProps } from './components/PlayerDashboard.js';
