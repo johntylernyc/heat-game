@@ -1,7 +1,7 @@
 {
   "name": "heat-game",
   "version": "0.1.0",
-  "description": "Web-based multiplayer board game inspired by Heat: Pedal to the Medal",
+  "description": "Web-based multiplayer board game inspired by Heat: Pedal to the Metal",
   "type": "module",
   "scripts": {
     "build": "tsc",
