@@ -138,3 +138,29 @@ export {
   getPlayerDraftedCards,
   buildDraftedDeck,
 } from './garage/index.js';
+
+// Legends (AI) system
+export type {
+  LegendDifficulty,
+  LegendCardValues,
+  LegendCard,
+  LegendCarState,
+  LegendState,
+  LegendConfig,
+  LegendMoveResult,
+} from './legends/index.js';
+
+export {
+  LEGEND_CARDS,
+  LEGEND_DECK_SIZE,
+  getCardValues,
+  findNextCorner,
+  isBetweenLineAndCorner,
+  moveLegend,
+  initLegends,
+  flipLegendCard,
+  discardCurrentCard,
+  executeLegendRound,
+  anyLegendFinished,
+  getLegendStandings,
+} from './legends/index.js';
