@@ -1,7 +1,8 @@
 /**
  * Heat: Pedal to the Metal — Core Game Engine
  *
- * Public API surface for the game state machine and rules engine.
+ * Public API surface for the game state machine, rules engine,
+ * and multiplayer infrastructure.
  */
 
 // Track
@@ -179,3 +180,47 @@ export {
   serializeRaceState,
   deserializeRaceState,
 } from './race.js';
+
+// Multiplayer server infrastructure
+export type {
+  HeatServerConfig,
+  HeatServer,
+} from './server/index.js';
+
+export {
+  createHeatServer,
+} from './server/index.js';
+
+export type {
+  Room,
+  RoomConfig,
+  RoomStatus,
+  Connection,
+  ClientMessage,
+  ServerMessage,
+  ClientGameState,
+  PublicPlayerState,
+  PrivatePlayerState,
+  PlayerStanding,
+  PhaseType,
+  ConnectionRegistry,
+} from './server/index.js';
+
+export {
+  createRoom,
+  joinRoom,
+  disconnectPlayer,
+  reconnectPlayer,
+  getPlayerIndex,
+  isPlayerConnected,
+  canStartGame,
+  startGame,
+  handleGameAction,
+  handleReconnection,
+  handleDisconnection,
+  getPhaseType,
+  partitionState,
+  buildPrivateState,
+  buildPublicState,
+  computeStandings,
+} from './server/index.js';

@@ -9,7 +9,11 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "ws": "^8.19.0"
   }
 }
