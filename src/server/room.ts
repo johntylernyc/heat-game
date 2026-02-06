@@ -2,10 +2,11 @@
  * Room management for multiplayer Heat games.
  *
  * Handles room lifecycle: creation, joining, player tracking,
- * reconnection, and cleanup.
+ * reconnection, lobby state, and cleanup.
  */
 
-import type { Room, RoomConfig, RoomStatus } from './types.js';
+import type { Room, RoomConfig, RoomStatus, CarColor, PlayerInfo, LobbyState, LobbyPlayer } from './types.js';
+import { CAR_COLORS } from './types.js';
 
 /**
  * Generate a short room code (6 uppercase alphanumeric chars).
@@ -29,28 +30,51 @@ export function generateRoomId(): string {
 /**
  * Create a new room with the given configuration.
  */
-export function createRoom(hostId: string, config: RoomConfig): Room {
+export function createRoom(hostId: string, config: RoomConfig, displayName?: string): Room {
+  const now = Date.now();
+  const info: PlayerInfo = {
+    displayName: displayName ?? 'Player 1',
+    carColor: CAR_COLORS[0],
+  };
+
   return {
     id: generateRoomId(),
     code: generateRoomCode(),
     hostId,
     status: 'waiting',
-    config,
+    config: { ...config },
     playerIds: [hostId],
     connectedPlayerIds: new Set([hostId]),
+    playerInfo: new Map([[hostId, info]]),
+    readyStatus: new Map([[hostId, false]]),
     gameState: null,
     rng: null,
     pendingActions: new Map(),
     turnTimer: null,
     phaseStartedAt: 0,
-    createdAt: Date.now(),
+    lastActivityAt: now,
+    createdAt: now,
   };
+}
+
+/**
+ * Get the first car color not already taken in the room.
+ */
+export function getAvailableColor(room: Room): CarColor {
+  const taken = new Set<CarColor>();
+  for (const info of room.playerInfo.values()) {
+    taken.add(info.carColor);
+  }
+  for (const color of CAR_COLORS) {
+    if (!taken.has(color)) return color;
+  }
+  return CAR_COLORS[0]; // Fallback (shouldn't happen with max 6 players)
 }
 
 /**
  * Add a player to a room. Returns error string if invalid.
  */
-export function joinRoom(room: Room, playerId: string): string | null {
+export function joinRoom(room: Room, playerId: string, displayName?: string): string | null {
   if (room.status !== 'waiting') {
     return 'Room is not accepting new players';
   }
@@ -65,6 +89,15 @@ export function joinRoom(room: Room, playerId: string): string | null {
 
   room.playerIds.push(playerId);
   room.connectedPlayerIds.add(playerId);
+
+  const info: PlayerInfo = {
+    displayName: displayName ?? `Player ${room.playerIds.length}`,
+    carColor: getAvailableColor(room),
+  };
+  room.playerInfo.set(playerId, info);
+  room.readyStatus.set(playerId, false);
+  room.lastActivityAt = Date.now();
+
   return null;
 }
 
@@ -108,11 +141,155 @@ export function allPlayersDisconnected(room: Room): boolean {
 }
 
 /**
- * Check if enough players have joined to start the game.
- * Requires at least 2 players.
+ * Check if enough players have joined and all are ready to start the game.
+ * Requires at least 2 players and all players marked ready.
  */
 export function canStartGame(room: Room): boolean {
-  return room.status === 'waiting' && room.playerIds.length >= 2;
+  if (room.status !== 'waiting' || room.playerIds.length < 2) return false;
+  return allPlayersReady(room);
+}
+
+/**
+ * Check if all players in the room are marked as ready.
+ */
+export function allPlayersReady(room: Room): boolean {
+  for (const playerId of room.playerIds) {
+    if (!room.readyStatus.get(playerId)) return false;
+  }
+  return true;
+}
+
+/**
+ * Set a player's ready status.
+ */
+export function setPlayerReady(room: Room, playerId: string, ready: boolean): string | null {
+  if (!room.playerIds.includes(playerId)) return 'Not in this room';
+  if (room.status !== 'waiting') return 'Game already started';
+
+  room.readyStatus.set(playerId, ready);
+  room.lastActivityAt = Date.now();
+  return null;
+}
+
+/**
+ * Set a player's display name and/or car color. Validates color uniqueness.
+ */
+export function setPlayerInfo(
+  room: Room,
+  playerId: string,
+  displayName?: string,
+  carColor?: CarColor,
+): string | null {
+  if (!room.playerIds.includes(playerId)) return 'Not in this room';
+  if (room.status !== 'waiting') return 'Cannot change info after game started';
+
+  const existing = room.playerInfo.get(playerId);
+  if (!existing) return 'Player info not found';
+
+  if (carColor !== undefined) {
+    // Check color not taken by another player
+    for (const [pid, info] of room.playerInfo) {
+      if (pid !== playerId && info.carColor === carColor) {
+        return 'Car color already taken';
+      }
+    }
+    existing.carColor = carColor;
+  }
+
+  if (displayName !== undefined) {
+    if (displayName.length === 0 || displayName.length > 20) {
+      return 'Display name must be 1-20 characters';
+    }
+    existing.displayName = displayName;
+  }
+
+  // Un-ready the player when they change info
+  room.readyStatus.set(playerId, false);
+  room.lastActivityAt = Date.now();
+
+  return null;
+}
+
+/**
+ * Update room config (host only). Returns error string if invalid.
+ */
+export function updateRoomConfig(
+  room: Room,
+  updates: { trackId?: string; lapCount?: number; maxPlayers?: number; turnTimeoutMs?: number },
+): string | null {
+  if (room.status !== 'waiting') return 'Cannot change config after game started';
+
+  if (updates.maxPlayers !== undefined) {
+    const clamped = Math.min(Math.max(updates.maxPlayers, 2), 6);
+    if (clamped < room.playerIds.length) {
+      return 'Cannot reduce max players below current player count';
+    }
+    room.config.maxPlayers = clamped;
+  }
+
+  if (updates.trackId !== undefined) room.config.trackId = updates.trackId;
+  if (updates.lapCount !== undefined) room.config.lapCount = Math.max(1, updates.lapCount);
+  if (updates.turnTimeoutMs !== undefined) room.config.turnTimeoutMs = Math.max(0, updates.turnTimeoutMs);
+
+  // Un-ready all players when config changes
+  for (const playerId of room.playerIds) {
+    room.readyStatus.set(playerId, false);
+  }
+  room.lastActivityAt = Date.now();
+
+  return null;
+}
+
+/**
+ * Remove a player from the lobby (before game starts).
+ * If the host leaves, the next player becomes host.
+ * Returns the new host ID if host changed, null otherwise.
+ */
+export function removePlayer(room: Room, playerId: string): { error?: string; newHostId?: string } {
+  if (!room.playerIds.includes(playerId)) return { error: 'Not in this room' };
+  if (room.status !== 'waiting') return { error: 'Cannot leave during game' };
+
+  room.playerIds = room.playerIds.filter(id => id !== playerId);
+  room.connectedPlayerIds.delete(playerId);
+  room.playerInfo.delete(playerId);
+  room.readyStatus.delete(playerId);
+  room.lastActivityAt = Date.now();
+
+  let newHostId: string | undefined;
+
+  if (room.hostId === playerId && room.playerIds.length > 0) {
+    newHostId = room.playerIds[0];
+    room.hostId = newHostId;
+    // New host is un-readied
+    room.readyStatus.set(newHostId, false);
+  }
+
+  return { newHostId };
+}
+
+/**
+ * Build the lobby state for broadcasting to clients.
+ */
+export function getLobbyState(room: Room): LobbyState {
+  const players: LobbyPlayer[] = room.playerIds.map(pid => {
+    const info = room.playerInfo.get(pid);
+    return {
+      playerId: pid,
+      displayName: info?.displayName ?? 'Unknown',
+      carColor: info?.carColor ?? 'red',
+      isReady: room.readyStatus.get(pid) ?? false,
+      isConnected: room.connectedPlayerIds.has(pid),
+      isHost: pid === room.hostId,
+    };
+  });
+
+  return {
+    roomId: room.id,
+    roomCode: room.code,
+    config: { ...room.config },
+    players,
+    canStart: canStartGame(room),
+  };
 }
 
 /**

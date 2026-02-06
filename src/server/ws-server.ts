@@ -23,6 +23,11 @@ import {
   canStartGame,
   cleanupRoom,
   allPlayersDisconnected,
+  setPlayerReady,
+  setPlayerInfo,
+  updateRoomConfig,
+  removePlayer,
+  getLobbyState,
 } from './room.js';
 import {
   startGame,
@@ -33,11 +38,20 @@ import {
 
 // -- Server State --
 
+interface Session {
+  playerId: string;
+  roomId: string | null;
+}
+
 interface ServerState {
   rooms: Map<string, Room>;
   roomsByCode: Map<string, Room>;
   connections: Map<string, WsConnection>;
   playerRooms: Map<string, string>;
+  /** Session tokens → session data for reconnection across page refreshes. */
+  sessions: Map<string, Session>;
+  /** Player ID → session token (reverse lookup). */
+  playerSessions: Map<string, string>;
 }
 
 interface WsConnection extends Connection {
@@ -70,6 +84,8 @@ export function createHeatServer(config: HeatServerConfig): HeatServer {
     roomsByCode: new Map(),
     connections: new Map(),
     playerRooms: new Map(),
+    sessions: new Map(),
+    playerSessions: new Map(),
   };
 
   const registry: ConnectionRegistry = {
@@ -96,6 +112,7 @@ export function createHeatServer(config: HeatServerConfig): HeatServer {
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     const playerId = generatePlayerId();
+    const sessionToken = generateSessionToken();
 
     const conn: WsConnection = {
       id: playerId,
@@ -108,6 +125,15 @@ export function createHeatServer(config: HeatServerConfig): HeatServer {
     };
 
     state.connections.set(playerId, conn);
+    state.sessions.set(sessionToken, { playerId, roomId: null });
+    state.playerSessions.set(playerId, sessionToken);
+
+    // Send session token to client
+    conn.send({
+      type: 'session-created',
+      sessionToken,
+      playerId,
+    });
 
     ws.on('message', (data: Buffer | string) => {
       try {
@@ -170,6 +196,26 @@ function handleMessage(
       handleJoinRoom(state, conn, message, registry);
       break;
 
+    case 'resume-session':
+      handleResumeSession(state, conn, message, registry);
+      break;
+
+    case 'set-player-info':
+      handleSetPlayerInfo(state, conn, message, registry);
+      break;
+
+    case 'set-ready':
+      handleSetReady(state, conn, message, registry);
+      break;
+
+    case 'update-room-config':
+      handleUpdateRoomConfig(state, conn, message, registry);
+      break;
+
+    case 'leave-room':
+      handleLeaveRoom(state, conn, registry);
+      break;
+
     case 'start-game':
       handleStartGame(state, conn, registry);
       break;
@@ -201,18 +247,28 @@ function handleCreateRoom(
     turnTimeoutMs: message.turnTimeoutMs ?? config.defaultTurnTimeoutMs ?? 60000,
   };
 
-  const room = createRoom(conn.playerId, roomConfig);
+  const room = createRoom(conn.playerId, roomConfig, message.displayName);
 
   state.rooms.set(room.id, room);
   state.roomsByCode.set(room.code, room);
   state.playerRooms.set(conn.playerId, room.id);
   conn.roomId = room.id;
 
+  // Update session with room info
+  const token = state.playerSessions.get(conn.playerId);
+  if (token) {
+    const session = state.sessions.get(token);
+    if (session) session.roomId = room.id;
+  }
+
   conn.send({
     type: 'room-created',
     roomId: room.id,
     roomCode: room.code,
   });
+
+  // Send initial lobby state
+  broadcastLobbyState(state, room, registry);
 }
 
 function handleJoinRoom(
@@ -224,7 +280,7 @@ function handleJoinRoom(
   if (conn.roomId) {
     // Check if reconnecting to same room
     const existingRoom = state.rooms.get(conn.roomId);
-    if (existingRoom && existingRoom.code === message.roomCode) {
+    if (existingRoom && existingRoom.code === message.roomCode.toUpperCase()) {
       handleReconnect(state, conn, existingRoom, registry);
       return;
     }
@@ -244,7 +300,7 @@ function handleJoinRoom(
     return;
   }
 
-  const error = joinRoom(room, conn.playerId);
+  const error = joinRoom(room, conn.playerId, message.displayName);
   if (error) {
     conn.send({ type: 'error', message: error });
     return;
@@ -253,12 +309,194 @@ function handleJoinRoom(
   state.playerRooms.set(conn.playerId, room.id);
   conn.roomId = room.id;
 
+  // Update session with room info
+  const token = state.playerSessions.get(conn.playerId);
+  if (token) {
+    const session = state.sessions.get(token);
+    if (session) session.roomId = room.id;
+  }
+
   registry.broadcast(room, {
     type: 'player-joined',
     playerId: conn.playerId,
     playerCount: room.playerIds.length,
     maxPlayers: room.config.maxPlayers,
   });
+
+  // Broadcast updated lobby state to all players
+  broadcastLobbyState(state, room, registry);
+}
+
+function handleResumeSession(
+  state: ServerState,
+  conn: WsConnection,
+  message: ClientMessage & { type: 'resume-session' },
+  registry: ConnectionRegistry,
+): void {
+  const session = state.sessions.get(message.sessionToken);
+  if (!session) {
+    conn.send({ type: 'error', message: 'Invalid session token' });
+    return;
+  }
+
+  const oldPlayerId = session.playerId;
+
+  // If the old player connection is still tracked, clean it up
+  const oldConn = state.connections.get(oldPlayerId);
+  if (oldConn && oldConn !== conn) {
+    state.connections.delete(oldPlayerId);
+  }
+
+  // Remap the connection to use the old player ID
+  state.connections.delete(conn.playerId);
+  // Clean up the new session that was auto-created for this connection
+  const newToken = state.playerSessions.get(conn.playerId);
+  if (newToken) {
+    state.sessions.delete(newToken);
+    state.playerSessions.delete(conn.playerId);
+  }
+
+  conn.playerId = oldPlayerId;
+  conn.id = oldPlayerId;
+  state.connections.set(oldPlayerId, conn);
+  state.playerSessions.set(oldPlayerId, message.sessionToken);
+  session.playerId = oldPlayerId;
+
+  // Send the session info back
+  conn.send({
+    type: 'session-created',
+    sessionToken: message.sessionToken,
+    playerId: oldPlayerId,
+  });
+
+  // If player was in a room, reconnect them
+  if (session.roomId) {
+    const room = state.rooms.get(session.roomId);
+    if (room && room.playerIds.includes(oldPlayerId)) {
+      conn.roomId = room.id;
+      state.playerRooms.set(oldPlayerId, room.id);
+
+      if (room.status === 'playing') {
+        reconnectPlayer(room, oldPlayerId);
+        handleReconnection(room, oldPlayerId, registry);
+      } else if (room.status === 'waiting') {
+        reconnectPlayer(room, oldPlayerId);
+        broadcastLobbyState(state, room, registry);
+        registry.broadcast(room, {
+          type: 'player-reconnected',
+          playerId: oldPlayerId,
+        });
+      }
+    } else {
+      // Room gone or player removed
+      session.roomId = null;
+    }
+  }
+}
+
+function handleSetPlayerInfo(
+  state: ServerState,
+  conn: WsConnection,
+  message: ClientMessage & { type: 'set-player-info' },
+  registry: ConnectionRegistry,
+): void {
+  const room = getPlayerRoom(state, conn);
+  if (!room) return;
+
+  const error = setPlayerInfo(room, conn.playerId, message.displayName, message.carColor);
+  if (error) {
+    conn.send({ type: 'error', message: error });
+    return;
+  }
+
+  broadcastLobbyState(state, room, registry);
+}
+
+function handleSetReady(
+  state: ServerState,
+  conn: WsConnection,
+  message: ClientMessage & { type: 'set-ready' },
+  registry: ConnectionRegistry,
+): void {
+  const room = getPlayerRoom(state, conn);
+  if (!room) return;
+
+  const error = setPlayerReady(room, conn.playerId, message.ready);
+  if (error) {
+    conn.send({ type: 'error', message: error });
+    return;
+  }
+
+  broadcastLobbyState(state, room, registry);
+}
+
+function handleUpdateRoomConfig(
+  state: ServerState,
+  conn: WsConnection,
+  message: ClientMessage & { type: 'update-room-config' },
+  registry: ConnectionRegistry,
+): void {
+  const room = getPlayerRoom(state, conn);
+  if (!room) return;
+
+  if (room.hostId !== conn.playerId) {
+    conn.send({ type: 'error', message: 'Only the host can update room config' });
+    return;
+  }
+
+  const error = updateRoomConfig(room, {
+    trackId: message.trackId,
+    lapCount: message.lapCount,
+    maxPlayers: message.maxPlayers,
+    turnTimeoutMs: message.turnTimeoutMs,
+  });
+  if (error) {
+    conn.send({ type: 'error', message: error });
+    return;
+  }
+
+  broadcastLobbyState(state, room, registry);
+}
+
+function handleLeaveRoom(
+  state: ServerState,
+  conn: WsConnection,
+  registry: ConnectionRegistry,
+): void {
+  const room = getPlayerRoom(state, conn);
+  if (!room) return;
+
+  const result = removePlayer(room, conn.playerId);
+  if (result.error) {
+    conn.send({ type: 'error', message: result.error });
+    return;
+  }
+
+  // Clear room association
+  conn.roomId = null;
+  state.playerRooms.delete(conn.playerId);
+  const token = state.playerSessions.get(conn.playerId);
+  if (token) {
+    const session = state.sessions.get(token);
+    if (session) session.roomId = null;
+  }
+
+  // Notify remaining players
+  if (room.playerIds.length > 0) {
+    registry.broadcast(room, {
+      type: 'player-left',
+      playerId: conn.playerId,
+      playerCount: room.playerIds.length,
+      maxPlayers: room.config.maxPlayers,
+      newHostId: result.newHostId,
+    });
+    broadcastLobbyState(state, room, registry);
+  } else {
+    // Room is empty, clean it up
+    cleanupRoom(room);
+    state.rooms.delete(room.id);
+    state.roomsByCode.delete(room.code);
+  }
 }
 
 function handleReconnect(
@@ -338,9 +576,15 @@ function handleClose(
     const room = state.rooms.get(roomId);
     if (room) {
       disconnectPlayer(room, conn.playerId);
-      handleDisconnection(room, conn.playerId, registry);
 
-      // Clean up empty rooms
+      if (room.status === 'playing') {
+        handleDisconnection(room, conn.playerId, registry);
+      } else if (room.status === 'waiting') {
+        // In waiting room, broadcast updated lobby state
+        broadcastLobbyState(state, room, registry);
+      }
+
+      // Clean up empty waiting rooms (keep playing rooms for reconnection)
       if (allPlayersDisconnected(room) && room.status !== 'playing') {
         cleanupRoom(room);
         state.rooms.delete(room.id);
@@ -349,6 +593,7 @@ function handleClose(
     }
   }
 
+  // Don't delete session — allow reconnection via resume-session
   state.connections.delete(conn.playerId);
   state.playerRooms.delete(conn.playerId);
 }
@@ -359,7 +604,18 @@ function cleanupStaleRooms(state: ServerState, maxAgeMs: number): void {
   const now = Date.now();
   for (const [id, room] of state.rooms) {
     if (room.status === 'closed') continue;
-    if (allPlayersDisconnected(room) && now - room.createdAt > maxAgeMs) {
+    const inactive = now - room.lastActivityAt > maxAgeMs;
+    const abandoned = allPlayersDisconnected(room);
+    if (abandoned && inactive) {
+      // Clean up sessions for players in this room
+      for (const playerId of room.playerIds) {
+        const token = state.playerSessions.get(playerId);
+        if (token) {
+          state.sessions.delete(token);
+          state.playerSessions.delete(playerId);
+        }
+        state.playerRooms.delete(playerId);
+      }
       cleanupRoom(room);
       state.rooms.delete(id);
       state.roomsByCode.delete(room.code);
@@ -368,6 +624,25 @@ function cleanupStaleRooms(state: ServerState, maxAgeMs: number): void {
 }
 
 // -- Helpers --
+
+function getPlayerRoom(state: ServerState, conn: WsConnection): Room | null {
+  if (!conn.roomId) {
+    conn.send({ type: 'error', message: 'Not in a room' });
+    return null;
+  }
+  const room = state.rooms.get(conn.roomId);
+  if (!room) {
+    conn.send({ type: 'error', message: 'Room not found' });
+    return null;
+  }
+  return room;
+}
+
+function broadcastLobbyState(state: ServerState, room: Room, registry: ConnectionRegistry): void {
+  if (room.status !== 'waiting') return;
+  const lobby = getLobbyState(room);
+  registry.broadcast(room, { type: 'lobby-state', lobby });
+}
 
 function sendJson(ws: WebSocket, data: ServerMessage): void {
   if (ws.readyState === WebSocket.OPEN) {
@@ -378,4 +653,13 @@ function sendJson(ws: WebSocket, data: ServerMessage): void {
 let playerCounter = 0;
 function generatePlayerId(): string {
   return `player-${++playerCounter}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function generateSessionToken(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let token = '';
+  for (let i = 0; i < 32; i++) {
+    token += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return token;
 }

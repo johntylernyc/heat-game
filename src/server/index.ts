@@ -3,6 +3,8 @@
  *
  * Provides WebSocket-based real-time multiplayer with:
  *   - Room management (create, join, reconnect)
+ *   - Game lobby with player identity, ready status, and config
+ *   - Session persistence for reconnection across page refreshes
  *   - Authoritative game server (validates all actions)
  *   - Hidden information enforcement (per-client state partitioning)
  *   - Turn timer with auto-advance
@@ -23,6 +25,13 @@ export {
   isPlayerConnected,
   allPlayersDisconnected,
   canStartGame,
+  allPlayersReady,
+  setPlayerReady,
+  setPlayerInfo,
+  updateRoomConfig,
+  removePlayer,
+  getLobbyState,
+  getAvailableColor,
   setRoomStatus,
   cleanupRoom,
   generateRoomCode,
@@ -52,11 +61,20 @@ export type {
   Room,
   RoomConfig,
   RoomStatus,
+  CarColor,
+  PlayerInfo,
+  LobbyPlayer,
+  LobbyState,
   Connection,
   ClientMessage,
   ServerMessage,
   CreateRoomMessage,
   JoinRoomMessage,
+  ResumeSessionMessage,
+  SetPlayerInfoMessage,
+  SetReadyMessage,
+  UpdateRoomConfigMessage,
+  LeaveRoomMessage,
   StartGameMessage,
   GearShiftMessage,
   PlayCardsMessage,
@@ -65,17 +83,23 @@ export type {
   ReactDoneMessage,
   SlipstreamMessage,
   DiscardMessage,
+  SessionCreatedMessage,
   RoomCreatedMessage,
   PlayerJoinedMessage,
+  PlayerLeftMessage,
+  LobbyStateMessage,
   GameStartedMessage,
   PhaseChangedMessage,
   ActionRequiredMessage,
   PlayerDisconnectedMessage,
   PlayerReconnectedMessage,
   GameOverMessage,
+  ReconnectAvailableMessage,
   ErrorMessage,
   PublicPlayerState,
   PrivatePlayerState,
   ClientGameState,
   PlayerStanding,
 } from './types.js';
+
+export { CAR_COLORS } from './types.js';

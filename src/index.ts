@@ -205,6 +205,10 @@ export type {
   Room,
   RoomConfig,
   RoomStatus,
+  CarColor,
+  PlayerInfo,
+  LobbyPlayer,
+  LobbyState,
   Connection,
   ClientMessage,
   ServerMessage,
@@ -217,6 +221,7 @@ export type {
 } from './server/index.js';
 
 export {
+  CAR_COLORS,
   createRoom,
   joinRoom,
   disconnectPlayer,
@@ -224,6 +229,13 @@ export {
   getPlayerIndex,
   isPlayerConnected,
   canStartGame,
+  allPlayersReady,
+  setPlayerReady,
+  setPlayerInfo,
+  updateRoomConfig,
+  removePlayer,
+  getLobbyState,
+  getAvailableColor,
   startGame,
   handleGameAction,
   handleReconnection,

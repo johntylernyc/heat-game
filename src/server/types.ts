@@ -18,6 +18,15 @@ import type {
 
 export type RoomStatus = 'waiting' | 'playing' | 'finished' | 'closed';
 
+export type CarColor = 'red' | 'blue' | 'green' | 'yellow' | 'black' | 'white';
+
+export const CAR_COLORS: CarColor[] = ['red', 'blue', 'green', 'yellow', 'black', 'white'];
+
+export interface PlayerInfo {
+  displayName: string;
+  carColor: CarColor;
+}
+
 export interface RoomConfig {
   trackId: string;
   lapCount: number;
@@ -26,6 +35,23 @@ export interface RoomConfig {
   turnTimeoutMs: number;
   /** RNG seed for deterministic game replay. Auto-generated if not provided. */
   seed?: number;
+}
+
+export interface LobbyPlayer {
+  playerId: string;
+  displayName: string;
+  carColor: CarColor;
+  isReady: boolean;
+  isConnected: boolean;
+  isHost: boolean;
+}
+
+export interface LobbyState {
+  roomId: string;
+  roomCode: string;
+  config: RoomConfig;
+  players: LobbyPlayer[];
+  canStart: boolean;
 }
 
 export interface Room {
@@ -38,6 +64,10 @@ export interface Room {
   playerIds: string[];
   /** Connected player IDs (subset of playerIds). */
   connectedPlayerIds: Set<string>;
+  /** Player display names and car colors. */
+  playerInfo: Map<string, PlayerInfo>;
+  /** Player ready status. */
+  readyStatus: Map<string, boolean>;
   /** Full authoritative game state. null before game starts. */
   gameState: GameState | null;
   /** RNG function for the game. */
@@ -48,6 +78,8 @@ export interface Room {
   turnTimer: ReturnType<typeof setTimeout> | null;
   /** Timestamp when the current phase started (for latency tracking). */
   phaseStartedAt: number;
+  /** Timestamp of last activity (for TTL-based cleanup). */
+  lastActivityAt: number;
   createdAt: number;
 }
 
@@ -59,11 +91,41 @@ export interface CreateRoomMessage {
   lapCount: number;
   maxPlayers: number;
   turnTimeoutMs?: number;
+  displayName: string;
 }
 
 export interface JoinRoomMessage {
   type: 'join-room';
   roomCode: string;
+  displayName: string;
+}
+
+export interface ResumeSessionMessage {
+  type: 'resume-session';
+  sessionToken: string;
+}
+
+export interface SetPlayerInfoMessage {
+  type: 'set-player-info';
+  displayName?: string;
+  carColor?: CarColor;
+}
+
+export interface SetReadyMessage {
+  type: 'set-ready';
+  ready: boolean;
+}
+
+export interface UpdateRoomConfigMessage {
+  type: 'update-room-config';
+  trackId?: string;
+  lapCount?: number;
+  maxPlayers?: number;
+  turnTimeoutMs?: number;
+}
+
+export interface LeaveRoomMessage {
+  type: 'leave-room';
 }
 
 export interface StartGameMessage {
@@ -106,6 +168,11 @@ export interface DiscardMessage {
 export type ClientMessage =
   | CreateRoomMessage
   | JoinRoomMessage
+  | ResumeSessionMessage
+  | SetPlayerInfoMessage
+  | SetReadyMessage
+  | UpdateRoomConfigMessage
+  | LeaveRoomMessage
   | StartGameMessage
   | GearShiftMessage
   | PlayCardsMessage
@@ -116,6 +183,12 @@ export type ClientMessage =
   | DiscardMessage;
 
 // -- Server → Client Messages --
+
+export interface SessionCreatedMessage {
+  type: 'session-created';
+  sessionToken: string;
+  playerId: string;
+}
 
 export interface RoomCreatedMessage {
   type: 'room-created';
@@ -128,6 +201,19 @@ export interface PlayerJoinedMessage {
   playerId: string;
   playerCount: number;
   maxPlayers: number;
+}
+
+export interface PlayerLeftMessage {
+  type: 'player-left';
+  playerId: string;
+  playerCount: number;
+  maxPlayers: number;
+  newHostId?: string;
+}
+
+export interface LobbyStateMessage {
+  type: 'lobby-state';
+  lobby: LobbyState;
 }
 
 export interface GameStartedMessage {
@@ -164,20 +250,30 @@ export interface GameOverMessage {
   standings: PlayerStanding[];
 }
 
+export interface ReconnectAvailableMessage {
+  type: 'reconnect-available';
+  roomCode: string;
+  roomId: string;
+}
+
 export interface ErrorMessage {
   type: 'error';
   message: string;
 }
 
 export type ServerMessage =
+  | SessionCreatedMessage
   | RoomCreatedMessage
   | PlayerJoinedMessage
+  | PlayerLeftMessage
+  | LobbyStateMessage
   | GameStartedMessage
   | PhaseChangedMessage
   | ActionRequiredMessage
   | PlayerDisconnectedMessage
   | PlayerReconnectedMessage
   | GameOverMessage
+  | ReconnectAvailableMessage
   | ErrorMessage;
 
 // -- State Partitioning --
