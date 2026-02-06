@@ -247,6 +247,49 @@ export {
   computeStandings,
 } from './server/index.js';
 
+// Championship Mode (multi-race series)
+export type {
+  ChampionshipConfig,
+  ChampionshipPhase,
+  ChampionshipState,
+  ChampionshipPlayerState,
+  ChampionshipStanding,
+  RaceResult,
+  SponsorshipCard,
+  SponsorshipEffect,
+  SponsorshipEarning,
+  EventCard,
+  EventEffect,
+} from './championship/index.js';
+
+export {
+  initChampionship,
+  startRace,
+  completeRace,
+  awardSponsorships,
+  advanceAfterRace,
+  prepareNextRace,
+  getChampionshipResults,
+  getChampion,
+  calculatePoints,
+  applyEventPointModifier,
+  scoreRace,
+  computeChampionshipStandings,
+  getStandingsOrder,
+  SPONSORSHIP_CARDS,
+  drawSponsorshipCard,
+  isPressCorner,
+  isSlipstreamAcrossCorner,
+  checkSponsorshipEarnings,
+  consumeSponsorshipCard,
+  EVENT_CARDS,
+  drawEventCard,
+  getEventLapModifier,
+  getEventStressModifier,
+  getEventHeatModifier,
+  isReverseGridEvent,
+} from './championship/index.js';
+
 // Weather & Road Conditions
 export {
   WEATHER_TOKENS,
