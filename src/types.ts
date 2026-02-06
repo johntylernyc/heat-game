@@ -48,6 +48,22 @@ export const COOLDOWN_PER_GEAR: Record<Gear, number> = {
   4: 0,
 };
 
+/** Stress cards awarded during spinout, by gear. */
+export const SPINOUT_STRESS: Record<Gear, number> = {
+  1: 1,
+  2: 1,
+  3: 2,
+  4: 2,
+};
+
+// -- Corner Definition (embedded in game state) --
+
+export interface CornerDef {
+  id: number;
+  speedLimit: number;
+  position: number;
+}
+
 // -- Player State --
 
 export interface PlayerState {
@@ -59,6 +75,16 @@ export interface PlayerState {
   engineZone: Card[];
   position: number;
   lapCount: number;
+  /** Speed value this round (cards + boost + adrenaline, NOT slipstream). */
+  speed: number;
+  /** Whether this player has used boost this round. */
+  hasBoosted: boolean;
+  /** Extra cooldown slots granted by Adrenaline this round. */
+  adrenalineCooldownBonus: number;
+  /** Cards played face-down, pending resolution in reveal-and-move. */
+  playedCards: Card[];
+  /** Position before this round's movement (for corner checks). */
+  previousPosition: number;
 }
 
 // -- Game Phases --
@@ -67,7 +93,12 @@ export type GamePhase =
   | 'setup'
   | 'gear-shift'
   | 'play-cards'
+  | 'reveal-and-move'
+  | 'adrenaline'
   | 'react'
+  | 'slipstream'
+  | 'check-corner'
+  | 'discard'
   | 'replenish'
   | 'finished';
 
@@ -85,6 +116,10 @@ export interface GameState {
   turnOrder: number[];
   lapTarget: number;
   raceStatus: RaceStatus;
+  /** Track corner definitions for corner speed checks. */
+  corners: CornerDef[];
+  /** Total number of spaces on the track loop. */
+  totalSpaces: number;
 }
 
 // -- Constants --

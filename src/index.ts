@@ -37,6 +37,7 @@ export type {
   GamePhase,
   RaceStatus,
   GameState,
+  CornerDef,
 } from './types.js';
 
 export {
@@ -47,6 +48,7 @@ export {
   MAX_GEAR,
   CARDS_PER_GEAR,
   COOLDOWN_PER_GEAR,
+  SPINOUT_STRESS,
 } from './types.js';
 
 // Cards
@@ -58,6 +60,7 @@ export {
   buildStartingDeck,
   buildEngineZone,
   getCardSpeedValue,
+  isPlayableCard,
 } from './cards.js';
 
 // Deck management
@@ -73,23 +76,34 @@ export {
 export type { ShiftResult } from './gear.js';
 export { shiftGear, getValidGearTargets } from './gear.js';
 
-// Engine (game state machine)
+// Engine (9-phase game state machine)
 export type {
   GameConfig,
-  GearShiftAction,
-  PlayCardsAction,
+  GearSelection,
+  CardSelection,
   CooldownAction,
   BoostAction,
+  SlipstreamAction,
+  DiscardSelection,
 } from './engine.js';
 
 export {
   initGame,
-  executeGearShift,
-  executePlayCards,
+  executeGearShiftPhase,
+  executePlayCardsPhase,
+  executeRevealAndMove,
+  executeAdrenaline,
   executeCooldown,
   executeBoost,
   endReactPhase,
-  executeReplenish,
+  executeSlipstream,
+  executeCheckCorner,
+  executeDiscardPhase,
+  executeReplenishPhase,
+  computeTurnOrder,
+  isClutteredHand,
+  isSlipstreamEligible,
+  findCornersCrossed,
 } from './engine.js';
 
 // Garage module (upgrade card drafting)

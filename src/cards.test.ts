@@ -7,6 +7,7 @@ import {
   buildStartingDeck,
   buildEngineZone,
   getCardSpeedValue,
+  isPlayableCard,
 } from './cards.js';
 
 describe('Card constructors', () => {
@@ -102,5 +103,32 @@ describe('getCardSpeedValue', () => {
 
   it('returns null for stress cards', () => {
     expect(getCardSpeedValue(stressCard())).toBeNull();
+  });
+});
+
+describe('isPlayableCard', () => {
+  it('speed cards are playable', () => {
+    expect(isPlayableCard(speedCard(1))).toBe(true);
+    expect(isPlayableCard(speedCard(4))).toBe(true);
+  });
+
+  it('stress cards are playable', () => {
+    expect(isPlayableCard(stressCard())).toBe(true);
+  });
+
+  it('speed-0 upgrade is playable', () => {
+    expect(isPlayableCard(upgradeCard('speed-0'))).toBe(true);
+  });
+
+  it('speed-5 upgrade is playable', () => {
+    expect(isPlayableCard(upgradeCard('speed-5'))).toBe(true);
+  });
+
+  it('heat cards are NOT playable', () => {
+    expect(isPlayableCard(heatCard())).toBe(false);
+  });
+
+  it('starting-heat upgrade is NOT playable', () => {
+    expect(isPlayableCard(upgradeCard('starting-heat'))).toBe(false);
   });
 });

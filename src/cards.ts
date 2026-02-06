@@ -61,9 +61,23 @@ export function buildEngineZone(): Card[] {
 }
 
 /**
+ * Check if a card can be played from hand during the Play Cards phase.
+ * Speed cards, playable upgrades (speed-0, speed-5), and Stress cards are playable.
+ * Heat cards and starting-heat upgrades cannot be played.
+ */
+export function isPlayableCard(card: Card): boolean {
+  if (card.type === 'speed') return true;
+  if (card.type === 'stress') return true;
+  if (card.type === 'upgrade') {
+    return card.subtype === 'speed-0' || card.subtype === 'speed-5';
+  }
+  return false;
+}
+
+/**
  * Get the effective speed value of a card when played.
  * Speed cards use their value. Upgrades have special values.
- * Heat and Stress cards cannot be played for speed directly.
+ * Heat and Stress cards have no fixed speed value (Stress resolved dynamically).
  */
 export function getCardSpeedValue(card: Card): number | null {
   switch (card.type) {
