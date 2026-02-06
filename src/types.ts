@@ -124,6 +124,71 @@ export interface GameState {
   startFinishLine: number;
   /** Track ID for serialization/identification. */
   trackId: string;
+  /** Active weather token for this race (undefined = no weather). */
+  weather?: WeatherToken;
+  /** Road conditions placed at corners (undefined = no road conditions). */
+  roadConditions?: RoadConditionPlacement[];
+}
+
+// -- Weather --
+
+export type WeatherType =
+  | 'freezing-cold'
+  | 'heavy-rain'
+  | 'rain'
+  | 'fog'
+  | 'cloudy'
+  | 'sunny';
+
+export interface WeatherStartingEffect {
+  /** Stress count modifier (positive = more stress, negative = less). */
+  stressMod: number;
+  /** Heat cards added to draw pile. */
+  heatInDeck: number;
+  /** Heat cards added to discard pile. */
+  heatInDiscard: number;
+  /** Extra Heat cards added to engine zone. */
+  heatInEngine: number;
+}
+
+export interface WeatherOngoingEffect {
+  /** Extra cooldown slots in all gears. */
+  cooldownMod: number;
+  /** Whether cooldown is completely disabled. */
+  noCooldown: boolean;
+  /** Whether slipstream is completely disabled. */
+  noSlipstream: boolean;
+  /** Extra slipstream range (added to default 2). */
+  slipstreamRangeMod: number;
+}
+
+export interface WeatherToken {
+  type: WeatherType;
+  name: string;
+  startingEffect: WeatherStartingEffect;
+  ongoingEffect: WeatherOngoingEffect;
+}
+
+// -- Road Conditions --
+
+export type CornerModType = 'speed-plus-1' | 'speed-minus-1' | 'overheat';
+export type SectorModType = 'slipstream-boost' | 'free-boost' | 'weather-sector';
+
+export interface CornerMod {
+  target: 'corner';
+  modType: CornerModType;
+}
+
+export interface SectorMod {
+  target: 'sector';
+  modType: SectorModType;
+}
+
+export type RoadConditionToken = CornerMod | SectorMod;
+
+export interface RoadConditionPlacement {
+  cornerId: number;
+  token: RoadConditionToken;
 }
 
 // -- Constants --

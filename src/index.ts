@@ -39,6 +39,16 @@ export type {
   RaceStatus,
   GameState,
   CornerDef,
+  WeatherType,
+  WeatherStartingEffect,
+  WeatherOngoingEffect,
+  WeatherToken,
+  CornerModType,
+  SectorModType,
+  CornerMod,
+  SectorMod,
+  RoadConditionToken,
+  RoadConditionPlacement,
 } from './types.js';
 
 export {
@@ -224,3 +234,25 @@ export {
   buildPublicState,
   computeStandings,
 } from './server/index.js';
+
+// Weather & Road Conditions
+export {
+  WEATHER_TOKENS,
+  WEATHER_TOKEN_COUNT,
+  ROAD_CONDITION_TOKENS,
+  ROAD_CONDITION_TOKEN_COUNT,
+  drawWeatherToken,
+  getWeatherStressCount,
+  applyWeatherToPlayer,
+  getEffectiveCooldown,
+  isSlipstreamAllowedByWeather,
+  getEffectiveSlipstreamRange,
+  placeRoadConditions,
+  getEffectiveSpeedLimit,
+  getCornerOverheatPenalty,
+  findSectorStartCorner,
+  hasSectorEffect,
+  isInFreeBoostSector,
+  getSlipstreamSectorBonus,
+  isInWeatherSector,
+} from './weather/index.js';

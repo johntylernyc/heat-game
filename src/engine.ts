@@ -35,6 +35,8 @@ import { buildStartingDeck, buildEngineZone, getCardSpeedValue, isPlayableCard }
 import { shuffle, drawCards, replenishHand, discardFromHand, createRng } from './deck.js';
 import { shiftGear } from './gear.js';
 import { stressCard } from './cards.js';
+import { getEffectiveCooldown, isSlipstreamAllowedByWeather, getEffectiveSlipstreamRange } from './weather/weather.js';
+import { getEffectiveSpeedLimit, getCornerOverheatPenalty, getSlipstreamSectorBonus, isInFreeBoostSector, isInWeatherSector } from './weather/road-conditions.js';
 
 // -- Initialization --
 
@@ -378,7 +380,8 @@ export function executeCooldown(
   assertActivePlayer(state, action.playerIndex);
 
   const player = state.players[action.playerIndex];
-  const maxCooldown = COOLDOWN_PER_GEAR[player.gear] + player.adrenalineCooldownBonus;
+  const baseCooldown = getEffectiveCooldown(player.gear, state.weather);
+  const maxCooldown = baseCooldown + player.adrenalineCooldownBonus;
 
   if (action.heatIndices.length > maxCooldown) {
     throw new Error(
@@ -436,18 +439,25 @@ export function executeBoost(
     throw new Error('Already boosted this round');
   }
 
-  // Pay 1 Heat from engine
-  const heatIndex = player.engineZone.findIndex(c => c.type === 'heat');
-  if (heatIndex === -1) {
-    throw new Error('No Heat in engine zone to pay for boost');
-  }
+  const freeBoost = isInFreeBoostSector(
+    player.position, state.corners, state.totalSpaces, state.roadConditions,
+  );
 
-  const engineZone = [...player.engineZone];
-  const [heatCard] = engineZone.splice(heatIndex, 1);
+  let engineZone = [...player.engineZone];
+  let discardPile = [...player.discardPile];
+
+  if (!freeBoost) {
+    // Pay 1 Heat from engine
+    const heatIndex = engineZone.findIndex(c => c.type === 'heat');
+    if (heatIndex === -1) {
+      throw new Error('No Heat in engine zone to pay for boost');
+    }
+    const [heatCard] = engineZone.splice(heatIndex, 1);
+    discardPile.push(heatCard);
+  }
 
   // Flip cards from draw pile until Speed card found
   let drawPile = [...player.drawPile];
-  let discardPile = [...player.discardPile, heatCard];
   let boostSpeed = 0;
 
   while (true) {
@@ -517,17 +527,28 @@ export function executeSlipstream(
   let players = state.players;
 
   if (action.accept) {
+    if (!isSlipstreamAllowedByWeather(state.weather)) {
+      throw new Error('Slipstream is disabled by weather');
+    }
+
     const otherPositions = state.players
       .filter((_, i) => i !== action.playerIndex)
       .map(p => p.position);
 
-    if (!isSlipstreamEligible(player.position, otherPositions, state.totalSpaces)) {
+    const slipstreamRange = getEffectiveSlipstreamRange(state.weather);
+
+    if (!isSlipstreamEligible(player.position, otherPositions, state.totalSpaces, slipstreamRange)) {
       throw new Error('Not eligible for slipstream');
     }
 
+    const sectorBonus = getSlipstreamSectorBonus(
+      player.position, state.corners, state.totalSpaces, state.roadConditions,
+    );
+    const slipstreamDistance = 2 + sectorBonus;
+
     players = replacePlayer(state.players, action.playerIndex, {
       ...player,
-      position: player.position + 2,
+      position: player.position + slipstreamDistance,
     });
   }
 
@@ -568,18 +589,23 @@ export function executeCheckCorner(
 
   for (const corner of cornersCrossed) {
     player = players[playerIndex];
-    const overspeed = player.speed - corner.speedLimit;
+    const effectiveLimit = getEffectiveSpeedLimit(corner, state.roadConditions);
+    const overspeed = player.speed - effectiveLimit;
 
     if (overspeed > 0) {
+      // Extra Heat penalty from overheat road condition
+      const overheatPenalty = getCornerOverheatPenalty(corner.id, state.roadConditions);
+      const heatCost = overspeed + overheatPenalty;
+
       // Must pay Heat from engine
       const heatInEngine = player.engineZone.filter(c => c.type === 'heat').length;
 
-      if (heatInEngine >= overspeed) {
+      if (heatInEngine >= heatCost) {
         // Pay Heat penalty
         const engineZone = [...player.engineZone];
         const discardPile = [...player.discardPile];
 
-        for (let i = 0; i < overspeed; i++) {
+        for (let i = 0; i < heatCost; i++) {
           const hIdx = engineZone.findIndex(c => c.type === 'heat');
           const [paid] = engineZone.splice(hIdx, 1);
           discardPile.push(paid);
@@ -592,7 +618,7 @@ export function executeCheckCorner(
         });
       } else {
         // Spinout: can't pay enough Heat
-        players = applySpinout(players, playerIndex, corner, state.totalSpaces);
+        players = applySpinout(players, playerIndex, corner, state.totalSpaces, state.roadConditions);
         break; // No further corner checks after spinout
       }
     }
@@ -750,10 +776,11 @@ export function isSlipstreamEligible(
   playerPosition: number,
   otherPositions: number[],
   totalSpaces: number,
+  range: number = 2,
 ): boolean {
   for (const otherPos of otherPositions) {
     const spacesAhead = (otherPos - playerPosition + totalSpaces) % totalSpaces;
-    if (spacesAhead >= 1 && spacesAhead <= 2) return true;
+    if (spacesAhead >= 1 && spacesAhead <= range) return true;
   }
   return false;
 }
@@ -840,6 +867,7 @@ function applySpinout(
   playerIndex: number,
   corner: CornerDef,
   totalSpaces: number,
+  roadConditions?: import('./types.js').RoadConditionPlacement[],
 ): PlayerState[] {
   const player = players[playerIndex];
 
@@ -847,7 +875,16 @@ function applySpinout(
   const positionBeforeCorner = (corner.position - 1 + totalSpaces) % totalSpaces;
 
   // Award stress cards based on gear
-  const stressCount = SPINOUT_STRESS[player.gear];
+  let stressCount = SPINOUT_STRESS[player.gear];
+
+  // Weather-sector road condition at this corner adds +1 extra stress on spinout
+  if (roadConditions) {
+    const placement = roadConditions.find(rc => rc.cornerId === corner.id);
+    if (placement?.token.target === 'sector' && placement.token.modType === 'weather-sector') {
+      stressCount += 1;
+    }
+  }
+
   const stressCards: Card[] = Array.from({ length: stressCount }, () => stressCard());
 
   return replacePlayer(players, playerIndex, {

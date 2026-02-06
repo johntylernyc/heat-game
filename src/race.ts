@@ -9,9 +9,11 @@
  */
 
 import type { TrackData } from './track/types.js';
-import type { GameState, CornerDef } from './types.js';
+import type { GameState, CornerDef, WeatherToken, RoadConditionPlacement } from './types.js';
 import { createRng, shuffle } from './deck.js';
 import { type GameConfig, initGame } from './engine.js';
+import { getWeatherStressCount, applyWeatherToPlayer } from './weather/weather.js';
+import { placeRoadConditions } from './weather/road-conditions.js';
 
 // -- Race Setup Configuration --
 
@@ -28,6 +30,12 @@ export interface RaceSetupConfig {
   seed: number;
   /** Starting grid order. If omitted, random order is used. */
   gridOrder?: GridOrder;
+  /** Weather token for this race. Revealed after garage drafting. */
+  weather?: WeatherToken;
+  /** Whether to randomly place road conditions at corners. Defaults to false. */
+  useRoadConditions?: boolean;
+  /** Pre-determined road condition placements (overrides useRoadConditions). */
+  roadConditions?: RoadConditionPlacement[];
 }
 
 export type GridOrder =
@@ -56,7 +64,7 @@ export interface RaceStanding {
 export function setupRace(config: RaceSetupConfig): GameState {
   const { playerIds, track, seed } = config;
   const laps = config.laps ?? track.defaultConfig.laps;
-  const stressCount = config.stressCount ?? track.defaultConfig.startingStress;
+  let stressCount = config.stressCount ?? track.defaultConfig.startingStress;
 
   if (playerIds.length < 2) {
     throw new Error('Need at least 2 players');
@@ -70,6 +78,11 @@ export function setupRace(config: RaceSetupConfig): GameState {
 
   if (laps < 1 || laps > 3) {
     throw new Error(`Lap count must be 1-3, got ${laps}`);
+  }
+
+  // Apply weather starting effect: modify stress count
+  if (config.weather) {
+    stressCount = getWeatherStressCount(stressCount, config.weather);
   }
 
   // Determine grid order
@@ -101,7 +114,30 @@ export function setupRace(config: RaceSetupConfig): GameState {
     startingPositions,
   };
 
-  return initGame(gameConfig);
+  let state = initGame(gameConfig);
+
+  // Apply weather starting effects (Heat placement in deck/discard/engine)
+  if (config.weather) {
+    const rng = createRng(seed + 1000); // Offset seed to avoid correlation
+    let players = [...state.players];
+    for (let i = 0; i < players.length; i++) {
+      players[i] = applyWeatherToPlayer(players[i], config.weather, rng);
+    }
+    state = { ...state, players, weather: config.weather };
+  }
+
+  // Place road conditions at corners
+  if (config.roadConditions) {
+    state = { ...state, roadConditions: config.roadConditions };
+  } else if (config.useRoadConditions) {
+    const rcPlacements = placeRoadConditions(
+      corners.map(c => c.id),
+      seed + 2000, // Offset seed
+    );
+    state = { ...state, roadConditions: rcPlacements };
+  }
+
+  return state;
 }
 
 /**
