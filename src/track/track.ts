@@ -1,4 +1,4 @@
-import type { Corner, LegendsLine, RaceConfig, Sector, SpotPosition, TrackData } from "./types.js";
+import type { Corner, LegendsLine, RaceConfig, Sector, TrackData } from "./types.js";
 
 /**
  * Track wraps a TrackData definition and provides movement,
