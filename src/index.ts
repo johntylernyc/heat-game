@@ -164,3 +164,18 @@ export {
   anyLegendFinished,
   getLegendStandings,
 } from './legends/index.js';
+
+// Race lifecycle management
+export type {
+  RaceSetupConfig,
+  GridOrder,
+  RaceStanding,
+} from './race.js';
+
+export {
+  setupRace,
+  assignStartingGrid,
+  computeFinalStandings,
+  serializeRaceState,
+  deserializeRaceState,
+} from './race.js';

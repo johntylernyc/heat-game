@@ -45,6 +45,10 @@ export interface GameConfig {
   seed: number;
   corners?: CornerDef[];
   totalSpaces?: number;
+  startFinishLine?: number;
+  trackId?: string;
+  /** Starting positions per player (index 0 = first player, etc.) */
+  startingPositions?: number[];
 }
 
 /**
@@ -61,10 +65,12 @@ export function initGame(config: GameConfig): GameState {
 
   const rng = createRng(seed);
 
-  const players: PlayerState[] = playerIds.map((id) => {
+  const players: PlayerState[] = playerIds.map((id, i) => {
     const deck = buildStartingDeck(stressCount);
     const shuffledDeck = shuffle(deck, rng);
     const engineZone = buildEngineZone();
+
+    const startPos = config.startingPositions ? config.startingPositions[i] : 0;
 
     let player: PlayerState = {
       id,
@@ -73,13 +79,13 @@ export function initGame(config: GameConfig): GameState {
       drawPile: shuffledDeck,
       discardPile: [],
       engineZone,
-      position: 0,
+      position: startPos,
       lapCount: 0,
       speed: 0,
       hasBoosted: false,
       adrenalineCooldownBonus: 0,
       playedCards: [],
-      previousPosition: 0,
+      previousPosition: startPos,
     };
 
     player = drawCards(player, HAND_SIZE, rng);
@@ -98,6 +104,8 @@ export function initGame(config: GameConfig): GameState {
     raceStatus: 'racing',
     corners: config.corners ?? [],
     totalSpaces: config.totalSpaces ?? 100,
+    startFinishLine: config.startFinishLine ?? 0,
+    trackId: config.trackId ?? '',
   };
 }
 
@@ -667,7 +675,7 @@ export function executeReplenishPhase(
   }
 
   // Check if race is finished
-  const raceStatus = checkRaceFinished(players, state.lapTarget);
+  const raceStatus = checkRaceFinished(players, state.lapTarget, state.raceStatus);
 
   if (raceStatus === 'finished') {
     return {
@@ -870,9 +878,16 @@ function checkLapCompletion(
   return players;
 }
 
-function checkRaceFinished(players: PlayerState[], lapTarget: number): RaceStatus {
+function checkRaceFinished(
+  players: PlayerState[],
+  lapTarget: number,
+  currentStatus: RaceStatus,
+): RaceStatus {
   const anyFinished = players.some(p => p.lapCount >= lapTarget);
-  return anyFinished ? 'finished' : 'racing';
+  if (!anyFinished) return currentStatus === 'final-round' ? 'final-round' : 'racing';
+  // First car crossed finish line this round — this round is the final round.
+  // Since we're already at the end of the round (replenish), the race is finished.
+  return 'finished';
 }
 
 // -- Helpers --

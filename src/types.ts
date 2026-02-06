@@ -104,7 +104,7 @@ export type GamePhase =
 
 // -- Race Status --
 
-export type RaceStatus = 'setup' | 'racing' | 'finished';
+export type RaceStatus = 'setup' | 'racing' | 'final-round' | 'finished';
 
 // -- Game State --
 
@@ -120,6 +120,10 @@ export interface GameState {
   corners: CornerDef[];
   /** Total number of spaces on the track loop. */
   totalSpaces: number;
+  /** Space index of the start/finish line. */
+  startFinishLine: number;
+  /** Track ID for serialization/identification. */
+  trackId: string;
 }
 
 // -- Constants --
