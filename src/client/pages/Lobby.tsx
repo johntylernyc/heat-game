@@ -1,9 +1,8 @@
-import { useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useSession } from '../hooks/useSession.js';
-import { useWebSocket } from '../hooks/useWebSocket.js';
-import { useGameState } from '../hooks/useGameState.js';
-import type { ServerMessage, CarColor, LobbyPlayer } from '../../server/types.js';
+import { useWebSocketContext } from '../providers/WebSocketProvider.js';
+import type { CarColor, LobbyPlayer } from '../../server/types.js';
 
 const CAR_COLORS: CarColor[] = ['red', 'blue', 'green', 'yellow', 'black', 'white'];
 
@@ -15,6 +14,8 @@ const COLOR_HEX: Record<CarColor, string> = {
   black: '#555',
   white: '#ecf0f1',
 };
+
+const LOBBY_TIMEOUT_MS = 5000;
 
 const styles = {
   container: {
@@ -138,45 +139,74 @@ const styles = {
     fontStyle: 'italic' as const,
     fontSize: '0.85rem',
   },
+  backLink: {
+    color: '#888',
+    fontSize: '0.9rem',
+    marginTop: '1rem',
+    textDecoration: 'none',
+  },
+  errorState: {
+    textAlign: 'center' as const,
+    padding: '3rem',
+  },
 } as const;
 
 export function Lobby() {
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
-  const { sessionToken, setSessionToken, setActiveRoom } = useSession();
-  const { state: gameState, handleServerMessage } = useGameState();
+  const { setActiveRoom } = useSession();
+  const { status, send, gameState } = useWebSocketContext();
 
-  const onMessage = (message: ServerMessage) => {
-    handleServerMessage(message);
-
-    if (message.type === 'session-created') {
-      setSessionToken(message.sessionToken);
-    } else if (message.type === 'game-started') {
-      navigate(`/game/${roomCode}`);
-    } else if (message.type === 'error') {
-      // If room not found, go back to home
-      if (message.message === 'Room not found') {
-        navigate('/');
-      }
-    }
-  };
-
-  const { status, send } = useWebSocket({
-    sessionToken,
-    onMessage,
-  });
-
-  // If we land on this page directly (not via create), join the room
-  useEffect(() => {
-    if (status === 'connected' && roomCode && !gameState.lobby) {
-      // The session resumption may have already joined us.
-      // If not, we'd need to join — but we need a display name.
-      // For now, the server will send lobby-state if session resumes into this room.
-      setActiveRoom(roomCode);
-    }
-  }, [status, roomCode, gameState.lobby, setActiveRoom]);
+  const [timedOut, setTimedOut] = useState(false);
 
   const lobby = gameState.lobby;
+
+  // Set active room from URL params
+  useEffect(() => {
+    if (roomCode) {
+      setActiveRoom(roomCode);
+    }
+  }, [roomCode, setActiveRoom]);
+
+  // Lobby timeout: if connected but no lobby state after LOBBY_TIMEOUT_MS, show error
+  useEffect(() => {
+    if (lobby || status !== 'connected') {
+      setTimedOut(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      if (!lobby) setTimedOut(true);
+    }, LOBBY_TIMEOUT_MS);
+
+    return () => clearTimeout(timer);
+  }, [lobby, status]);
+
+  // If room not found error or timeout, show error state
+  if (timedOut || (gameState.error === 'Room not found')) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.errorState}>
+          <p style={{ fontSize: '1.5rem', color: '#ff4444', marginBottom: '1rem' }}>
+            Room not found or expired
+          </p>
+          <p style={{ color: '#888', marginBottom: '2rem' }}>
+            The room may have been closed or the link may be invalid.
+          </p>
+          <button
+            style={styles.button}
+            onClick={() => {
+              setActiveRoom(null);
+              navigate('/');
+            }}
+          >
+            Back to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const playerId = gameState.playerId;
   const isHost = lobby?.players.some((p) => p.playerId === playerId && p.isHost) ?? false;
   const myPlayer = lobby?.players.find((p) => p.playerId === playerId);
@@ -213,7 +243,9 @@ export function Lobby() {
         <p style={styles.hint}>Share this code with friends</p>
       </div>
 
-      {gameState.error && <p style={styles.error}>{gameState.error}</p>}
+      {gameState.error && gameState.error !== 'Room not found' && (
+        <p style={styles.error}>{gameState.error}</p>
+      )}
 
       {/* Game Config */}
       {lobby && (
@@ -290,6 +322,8 @@ export function Lobby() {
           Leave Room
         </button>
       </div>
+
+      <Link to="/" style={styles.backLink}>Back to Home</Link>
     </div>
   );
 }

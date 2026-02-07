@@ -1,7 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSession } from '../hooks/useSession.js';
-import { useWebSocket } from '../hooks/useWebSocket.js';
-import { useGameState } from '../hooks/useGameState.js';
+import { useWebSocketContext } from '../providers/WebSocketProvider.js';
 import { PlayerDashboard } from '../components/PlayerDashboard.js';
 import { OpponentPanel } from '../components/OpponentPanel.js';
 import type { ServerMessage } from '../../server/types.js';
@@ -126,21 +125,8 @@ const styles = {
 export function Game() {
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
-  const { sessionToken, setSessionToken, setActiveRoom } = useSession();
-  const { state: gameState, handleServerMessage } = useGameState();
-
-  const onMessage = (message: ServerMessage) => {
-    handleServerMessage(message);
-
-    if (message.type === 'session-created') {
-      setSessionToken(message.sessionToken);
-    }
-  };
-
-  const { status, send } = useWebSocket({
-    sessionToken,
-    onMessage,
-  });
+  const { setActiveRoom } = useSession();
+  const { status, send, gameState } = useWebSocketContext();
 
   const connected = status === 'connected';
   const gs = gameState.gameState;
