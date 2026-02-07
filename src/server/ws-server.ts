@@ -52,6 +52,8 @@ interface ServerState {
   sessions: Map<string, Session>;
   /** Player ID → session token (reverse lookup). */
   playerSessions: Map<string, string>;
+  /** Pending cleanup timers for waiting rooms (room ID → timer handle). */
+  roomCleanupTimers: Map<string, ReturnType<typeof setTimeout>>;
 }
 
 interface WsConnection extends Connection {
@@ -64,6 +66,8 @@ export interface HeatServerConfig {
   defaultTurnTimeoutMs?: number;
   /** Cleanup rooms after this many ms of inactivity. 0 = no cleanup. */
   roomCleanupMs?: number;
+  /** Grace period before deleting empty waiting rooms (ms). Default 30000. */
+  waitingRoomGracePeriodMs?: number;
 }
 
 export interface HeatServer {
@@ -86,7 +90,10 @@ export function createHeatServer(config: HeatServerConfig): HeatServer {
     playerRooms: new Map(),
     sessions: new Map(),
     playerSessions: new Map(),
+    roomCleanupTimers: new Map(),
   };
+
+  const WAITING_ROOM_GRACE_PERIOD_MS = config.waitingRoomGracePeriodMs ?? 30_000;
 
   const registry: ConnectionRegistry = {
     getConnection(playerId: string) {
@@ -146,11 +153,11 @@ export function createHeatServer(config: HeatServerConfig): HeatServer {
     });
 
     ws.on('close', () => {
-      handleClose(state, conn, registry);
+      handleClose(state, conn, registry, WAITING_ROOM_GRACE_PERIOD_MS);
     });
 
     ws.on('error', () => {
-      handleClose(state, conn, registry);
+      handleClose(state, conn, registry, WAITING_ROOM_GRACE_PERIOD_MS);
     });
   });
 
@@ -166,6 +173,11 @@ export function createHeatServer(config: HeatServerConfig): HeatServer {
     wss,
     close() {
       if (cleanupInterval) clearInterval(cleanupInterval);
+      // Cancel all pending room cleanup timers
+      for (const timer of state.roomCleanupTimers.values()) {
+        clearTimeout(timer);
+      }
+      state.roomCleanupTimers.clear();
       // Clean up all rooms
       for (const room of state.rooms.values()) {
         cleanupRoom(room);
@@ -306,6 +318,9 @@ function handleJoinRoom(
     return;
   }
 
+  // Cancel any pending grace-period cleanup
+  cancelRoomCleanup(state, room.id);
+
   state.playerRooms.set(conn.playerId, room.id);
   conn.roomId = room.id;
 
@@ -375,6 +390,9 @@ function handleResumeSession(
     if (room && room.playerIds.includes(oldPlayerId)) {
       conn.roomId = room.id;
       state.playerRooms.set(oldPlayerId, room.id);
+
+      // Cancel any pending grace-period cleanup
+      cancelRoomCleanup(state, room.id);
 
       if (room.status === 'playing') {
         reconnectPlayer(room, oldPlayerId);
@@ -505,6 +523,9 @@ function handleReconnect(
   room: Room,
   registry: ConnectionRegistry,
 ): void {
+  // Cancel any pending grace-period cleanup
+  cancelRoomCleanup(state, room.id);
+
   reconnectPlayer(room, conn.playerId);
   state.playerRooms.set(conn.playerId, room.id);
   conn.roomId = room.id;
@@ -569,6 +590,7 @@ function handleClose(
   state: ServerState,
   conn: WsConnection,
   registry: ConnectionRegistry,
+  gracePeriodMs: number,
 ): void {
   const roomId = conn.roomId ?? state.playerRooms.get(conn.playerId);
 
@@ -584,11 +606,9 @@ function handleClose(
         broadcastLobbyState(state, room, registry);
       }
 
-      // Clean up empty waiting rooms (keep playing rooms for reconnection)
+      // Schedule cleanup for empty waiting rooms with grace period
       if (allPlayersDisconnected(room) && room.status !== 'playing') {
-        cleanupRoom(room);
-        state.rooms.delete(room.id);
-        state.roomsByCode.delete(room.code);
+        scheduleRoomCleanup(state, room, gracePeriodMs);
       }
     }
   }
@@ -596,6 +616,33 @@ function handleClose(
   // Don't delete session — allow reconnection via resume-session
   state.connections.delete(conn.playerId);
   state.playerRooms.delete(conn.playerId);
+}
+
+// -- Grace Period --
+
+function scheduleRoomCleanup(state: ServerState, room: Room, gracePeriodMs: number): void {
+  // Cancel any existing timer for this room
+  cancelRoomCleanup(state, room.id);
+
+  const timer = setTimeout(() => {
+    state.roomCleanupTimers.delete(room.id);
+    // Re-check: only delete if still abandoned
+    if (state.rooms.has(room.id) && allPlayersDisconnected(room) && room.status !== 'playing') {
+      cleanupRoom(room);
+      state.rooms.delete(room.id);
+      state.roomsByCode.delete(room.code);
+    }
+  }, gracePeriodMs);
+
+  state.roomCleanupTimers.set(room.id, timer);
+}
+
+function cancelRoomCleanup(state: ServerState, roomId: string): void {
+  const timer = state.roomCleanupTimers.get(roomId);
+  if (timer) {
+    clearTimeout(timer);
+    state.roomCleanupTimers.delete(roomId);
+  }
 }
 
 // -- Cleanup --

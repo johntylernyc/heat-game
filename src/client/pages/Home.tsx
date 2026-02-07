@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../hooks/useSession.js';
-import { useWebSocket } from '../hooks/useWebSocket.js';
-import { useGameState } from '../hooks/useGameState.js';
-import type { ServerMessage } from '../../server/types.js';
+import { useWebSocketContext } from '../providers/WebSocketProvider.js';
 
 const styles = {
   container: {
@@ -124,8 +122,8 @@ const TRACKS = [
 
 export function Home() {
   const navigate = useNavigate();
-  const { sessionToken, activeRoom, setSessionToken, setActiveRoom } = useSession();
-  const { state: gameState, handleServerMessage } = useGameState();
+  const { activeRoom } = useSession();
+  const { status, send, gameState } = useWebSocketContext();
 
   const [displayName, setDisplayName] = useState('');
   const [joinCode, setJoinCode] = useState('');
@@ -133,32 +131,6 @@ export function Home() {
   const [lapCount, setLapCount] = useState(1);
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [error, setError] = useState<string | null>(null);
-
-  const onMessage = (message: ServerMessage) => {
-    handleServerMessage(message);
-
-    if (message.type === 'session-created') {
-      setSessionToken(message.sessionToken);
-    } else if (message.type === 'room-created') {
-      setActiveRoom(message.roomCode);
-      navigate(`/lobby/${message.roomCode}`);
-    } else if (message.type === 'lobby-state') {
-      setActiveRoom(message.lobby.roomCode);
-      navigate(`/lobby/${message.lobby.roomCode}`);
-    } else if (message.type === 'game-started' || message.type === 'phase-changed') {
-      // Reconnected into an active game
-      if (activeRoom) {
-        navigate(`/game/${activeRoom}`);
-      }
-    } else if (message.type === 'error') {
-      setError(message.message);
-    }
-  };
-
-  const { status, send } = useWebSocket({
-    sessionToken,
-    onMessage,
-  });
 
   const connected = status === 'connected';
 
@@ -196,7 +168,6 @@ export function Home() {
 
   const handleRejoin = () => {
     if (activeRoom) {
-      // Navigate to lobby — the server will redirect to game if it's in progress
       navigate(`/lobby/${activeRoom}`);
     }
   };
@@ -221,7 +192,7 @@ export function Home() {
         </div>
       )}
 
-      {error && <p style={styles.error}>{error}</p>}
+      {(error || gameState.error) && <p style={styles.error}>{error || gameState.error}</p>}
 
       {/* Display Name */}
       <div style={{ ...styles.card, marginBottom: '1.5rem' }}>

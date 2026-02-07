@@ -65,6 +65,8 @@ interface WsConnection extends Connection {
   ws: import('ws').WebSocket;
 }
 
+const WAITING_ROOM_GRACE_PERIOD_MS = 30_000;
+
 const state = {
   rooms: new Map<string, Room>(),
   roomsByCode: new Map<string, Room>(),
@@ -72,6 +74,7 @@ const state = {
   playerRooms: new Map<string, string>(),
   sessions: new Map<string, Session>(),
   playerSessions: new Map<string, string>(),
+  roomCleanupTimers: new Map<string, ReturnType<typeof setTimeout>>(),
 };
 
 const registry: ConnectionRegistry = {
@@ -208,6 +211,7 @@ function handleMessage(conn: WsConnection, message: ClientMessage): void {
       if (!room) { conn.send({ type: 'error', message: 'Room not found' }); return; }
       const error = joinRoom(room, conn.playerId, message.displayName);
       if (error) { conn.send({ type: 'error', message: error }); return; }
+      cancelRoomCleanup(room.id);
       state.playerRooms.set(conn.playerId, room.id);
       conn.roomId = room.id;
       const token = state.playerSessions.get(conn.playerId);
@@ -233,6 +237,7 @@ function handleMessage(conn: WsConnection, message: ClientMessage): void {
       if (session.roomId) {
         const room = state.rooms.get(session.roomId);
         if (room && room.playerIds.includes(oldId)) {
+          cancelRoomCleanup(room.id);
           conn.roomId = room.id;
           state.playerRooms.set(oldId, room.id);
           if (room.status === 'playing') { reconnectPlayer(room, oldId); handleReconnection(room, oldId, registry); }
@@ -298,12 +303,28 @@ function handleClose(conn: WsConnection): void {
       if (room.status === 'playing') handleDisconnection(room, conn.playerId, registry);
       else if (room.status === 'waiting') broadcastLobbyState(room);
       if (allPlayersDisconnected(room) && room.status !== 'playing') {
-        cleanupRoom(room); state.rooms.delete(room.id); state.roomsByCode.delete(room.code);
+        scheduleRoomCleanup(room);
       }
     }
   }
   state.connections.delete(conn.playerId);
   state.playerRooms.delete(conn.playerId);
+}
+
+function scheduleRoomCleanup(room: Room): void {
+  cancelRoomCleanup(room.id);
+  const timer = setTimeout(() => {
+    state.roomCleanupTimers.delete(room.id);
+    if (state.rooms.has(room.id) && allPlayersDisconnected(room) && room.status !== 'playing') {
+      cleanupRoom(room); state.rooms.delete(room.id); state.roomsByCode.delete(room.code);
+    }
+  }, WAITING_ROOM_GRACE_PERIOD_MS);
+  state.roomCleanupTimers.set(room.id, timer);
+}
+
+function cancelRoomCleanup(roomId: string): void {
+  const timer = state.roomCleanupTimers.get(roomId);
+  if (timer) { clearTimeout(timer); state.roomCleanupTimers.delete(roomId); }
 }
 
 function getRoom(conn: WsConnection): Room | null {
@@ -328,6 +349,8 @@ httpServer.listen(port, () => {
 
 function shutdown() {
   console.log('\nShutting down...');
+  for (const timer of state.roomCleanupTimers.values()) clearTimeout(timer);
+  state.roomCleanupTimers.clear();
   for (const room of state.rooms.values()) cleanupRoom(room);
   wss.close();
   httpServer.close();
