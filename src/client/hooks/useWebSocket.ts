@@ -18,6 +18,10 @@ export interface UseWebSocketOptions {
 
 const MAX_RECONNECT_DELAY = 10_000;
 const INITIAL_RECONNECT_DELAY = 500;
+/** How often the client sends an application-level ping (ms). */
+const PING_INTERVAL = 25_000;
+/** How long to wait for a pong before considering the connection dead (ms). */
+const PONG_TIMEOUT = 10_000;
 
 function getDefaultUrl(): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -38,6 +42,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const intentionalCloseRef = useRef(false);
+  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pongTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep latest values in refs to avoid reconnection on changes
   const onMessageRef = useRef(onMessage);
@@ -76,6 +82,32 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     let mounted = true;
     intentionalCloseRef.current = false;
 
+    function stopHeartbeat() {
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = null;
+      }
+      if (pongTimeoutRef.current) {
+        clearTimeout(pongTimeoutRef.current);
+        pongTimeoutRef.current = null;
+      }
+    }
+
+    function startHeartbeat(ws: WebSocket) {
+      stopHeartbeat();
+      pingIntervalRef.current = setInterval(() => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        // Send application-level ping
+        ws.send(JSON.stringify({ type: 'ping' }));
+        // Start pong timeout — if no pong arrives, force-close
+        pongTimeoutRef.current = setTimeout(() => {
+          pongTimeoutRef.current = null;
+          // Connection is zombie — force close to trigger reconnection
+          ws.close();
+        }, PONG_TIMEOUT);
+      }, PING_INTERVAL);
+    }
+
     function connect(isReconnect: boolean) {
       if (!mounted || intentionalCloseRef.current) return;
 
@@ -88,6 +120,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         if (!mounted) { ws.close(); return; }
         reconnectDelayRef.current = INITIAL_RECONNECT_DELAY;
         updateStatus('connected');
+        startHeartbeat(ws);
 
         // Resume session if we have a token (read from ref to get latest value)
         const token = sessionTokenRef.current;
@@ -100,6 +133,14 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         if (!mounted) return;
         try {
           const message = JSON.parse(event.data as string) as ServerMessage;
+          // Application-level pong: clear the pong timeout
+          if (message.type === 'pong') {
+            if (pongTimeoutRef.current) {
+              clearTimeout(pongTimeoutRef.current);
+              pongTimeoutRef.current = null;
+            }
+            return;
+          }
           onMessageRef.current?.(message);
         } catch {
           // Ignore malformed messages
@@ -107,6 +148,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       };
 
       ws.onclose = () => {
+        stopHeartbeat();
         if (!mounted || intentionalCloseRef.current) return;
         updateStatus('disconnected');
         scheduleReconnect();
@@ -132,6 +174,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     return () => {
       mounted = false;
       intentionalCloseRef.current = true;
+      stopHeartbeat();
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;

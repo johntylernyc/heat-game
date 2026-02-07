@@ -181,6 +181,10 @@ export interface DiscardMessage {
   cardIndices: number[];
 }
 
+export interface ClientPingMessage {
+  type: 'ping';
+}
+
 export type ClientMessage =
   | CreateRoomMessage
   | JoinRoomMessage
@@ -197,7 +201,8 @@ export type ClientMessage =
   | ReactBoostMessage
   | ReactDoneMessage
   | SlipstreamMessage
-  | DiscardMessage;
+  | DiscardMessage
+  | ClientPingMessage;
 
 // -- Server → Client Messages --
 
@@ -300,6 +305,10 @@ export interface ErrorMessage {
   message: string;
 }
 
+export interface ServerPongMessage {
+  type: 'pong';
+}
+
 export type ServerMessage =
   | SessionCreatedMessage
   | RoomCreatedMessage
@@ -315,7 +324,8 @@ export type ServerMessage =
   | QualifyingResultMessage
   | RaceResultMessage
   | ReconnectAvailableMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | ServerPongMessage;
 
 // -- State Partitioning --
 
