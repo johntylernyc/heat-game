@@ -29,6 +29,7 @@ import {
   removePlayer,
   getLobbyState,
 } from './room.js';
+import { baseGameTracks } from '../track/index.js';
 import {
   startGame,
   handleGameAction,
@@ -240,10 +241,34 @@ function handleCreateRoom(
     return;
   }
 
+  // Validate displayName
+  if (typeof message.displayName !== 'string' || message.displayName.trim() === '') {
+    conn.send({ type: 'error', message: 'Display name is required' });
+    return;
+  }
+
+  // Validate trackId
+  if (!(message.trackId in baseGameTracks)) {
+    conn.send({ type: 'error', message: `Invalid track: ${message.trackId}` });
+    return;
+  }
+
+  // Validate lapCount (1-3)
+  if (typeof message.lapCount !== 'number' || message.lapCount < 1 || message.lapCount > 3) {
+    conn.send({ type: 'error', message: 'Lap count must be between 1 and 3' });
+    return;
+  }
+
+  // Validate maxPlayers (2-6)
+  if (typeof message.maxPlayers !== 'number' || message.maxPlayers < 2 || message.maxPlayers > 6) {
+    conn.send({ type: 'error', message: 'Max players must be between 2 and 6' });
+    return;
+  }
+
   const roomConfig: RoomConfig = {
     trackId: message.trackId,
     lapCount: message.lapCount,
-    maxPlayers: Math.min(Math.max(message.maxPlayers, 2), 6),
+    maxPlayers: message.maxPlayers,
     turnTimeoutMs: message.turnTimeoutMs ?? config.defaultTurnTimeoutMs ?? 60000,
   };
 
