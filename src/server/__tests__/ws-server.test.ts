@@ -422,6 +422,133 @@ describe('WebSocket server', () => {
     ws.close();
   });
 
+  describe('create-room input validation', () => {
+    it('rejects empty displayName', async () => {
+      server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
+      const ws = await connect(TEST_PORT);
+
+      const msgPromise = waitForMessageOfType(ws, 'error');
+      send(ws, { type: 'create-room', trackId: 'usa', lapCount: 1, maxPlayers: 4, displayName: '' });
+      const msg = await msgPromise;
+
+      expect(msg.type).toBe('error');
+      if (msg.type === 'error') {
+        expect(msg.message).toBe('Display name is required');
+      }
+
+      ws.close();
+    });
+
+    it('rejects missing displayName', async () => {
+      server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
+      const ws = await connect(TEST_PORT);
+
+      const msgPromise = waitForMessageOfType(ws, 'error');
+      send(ws, { type: 'create-room', trackId: 'usa', lapCount: 1, maxPlayers: 4 });
+      const msg = await msgPromise;
+
+      expect(msg.type).toBe('error');
+      if (msg.type === 'error') {
+        expect(msg.message).toBe('Display name is required');
+      }
+
+      ws.close();
+    });
+
+    it('rejects invalid trackId', async () => {
+      server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
+      const ws = await connect(TEST_PORT);
+
+      const msgPromise = waitForMessageOfType(ws, 'error');
+      send(ws, { type: 'create-room', trackId: 'fake', lapCount: 1, maxPlayers: 4, displayName: 'Alice' });
+      const msg = await msgPromise;
+
+      expect(msg.type).toBe('error');
+      if (msg.type === 'error') {
+        expect(msg.message).toBe('Invalid track: fake');
+      }
+
+      ws.close();
+    });
+
+    it('rejects lapCount of 0', async () => {
+      server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
+      const ws = await connect(TEST_PORT);
+
+      const msgPromise = waitForMessageOfType(ws, 'error');
+      send(ws, { type: 'create-room', trackId: 'usa', lapCount: 0, maxPlayers: 4, displayName: 'Alice' });
+      const msg = await msgPromise;
+
+      expect(msg.type).toBe('error');
+      if (msg.type === 'error') {
+        expect(msg.message).toBe('Lap count must be between 1 and 3');
+      }
+
+      ws.close();
+    });
+
+    it('rejects lapCount greater than 3', async () => {
+      server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
+      const ws = await connect(TEST_PORT);
+
+      const msgPromise = waitForMessageOfType(ws, 'error');
+      send(ws, { type: 'create-room', trackId: 'usa', lapCount: 5, maxPlayers: 4, displayName: 'Alice' });
+      const msg = await msgPromise;
+
+      expect(msg.type).toBe('error');
+      if (msg.type === 'error') {
+        expect(msg.message).toBe('Lap count must be between 1 and 3');
+      }
+
+      ws.close();
+    });
+
+    it('rejects maxPlayers of 1', async () => {
+      server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
+      const ws = await connect(TEST_PORT);
+
+      const msgPromise = waitForMessageOfType(ws, 'error');
+      send(ws, { type: 'create-room', trackId: 'usa', lapCount: 1, maxPlayers: 1, displayName: 'Alice' });
+      const msg = await msgPromise;
+
+      expect(msg.type).toBe('error');
+      if (msg.type === 'error') {
+        expect(msg.message).toBe('Max players must be between 2 and 6');
+      }
+
+      ws.close();
+    });
+
+    it('rejects maxPlayers of 7', async () => {
+      server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
+      const ws = await connect(TEST_PORT);
+
+      const msgPromise = waitForMessageOfType(ws, 'error');
+      send(ws, { type: 'create-room', trackId: 'usa', lapCount: 1, maxPlayers: 7, displayName: 'Alice' });
+      const msg = await msgPromise;
+
+      expect(msg.type).toBe('error');
+      if (msg.type === 'error') {
+        expect(msg.message).toBe('Max players must be between 2 and 6');
+      }
+
+      ws.close();
+    });
+
+    it('accepts valid parameters at boundaries', async () => {
+      server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
+      const ws = await connect(TEST_PORT);
+
+      const msgPromise = waitForMessageOfType(ws, 'room-created');
+      send(ws, { type: 'create-room', trackId: 'italy', lapCount: 3, maxPlayers: 6, displayName: 'Alice' });
+      const msg = await msgPromise;
+
+      expect(msg.type).toBe('room-created');
+
+      ws.close();
+    });
+  });
+
   it('supports session resumption', async () => {
     server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
     const { ws: ws1, sessionToken, playerId } = await connectWithSession(TEST_PORT);
