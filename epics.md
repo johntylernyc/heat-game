@@ -802,3 +802,269 @@ export default defineConfig({
 - [ ] React component tests for Home, Lobby, and Game pages render without errors
 - [ ] `useWebSocket` hook is testable with a mock WebSocket server
 - [ ] All existing tests continue to pass after project restructure
+
+---
+
+# Epic: Visual Game Assets & Board Presentation
+
+- type: epic
+- priority: 1
+- labels: epic, phase-3, frontend, visual, assets
+
+## Description
+
+Transform the game from programmatic geometric primitives into a visually compelling racing experience. Currently the track is a gray line, cars are colored circles with gear numbers, cards are gradient rectangles with text, and the UI chrome is transparent black boxes drawn on Canvas. The game functions correctly but looks like a debug visualization, not a game.
+
+This epic replaces every major visual element with purpose-built assets and styled rendering that evokes the tactile feel of the Heat: Pedal to the Metal board game — a 1960s grand prix racing aesthetic with bold colors, textured surfaces, and satisfying feedback.
+
+**What exists today (the baseline to replace):**
+
+| Element | Current rendering | Target |
+|---------|------------------|--------|
+| Track road | Thick gray `strokeStyle` line | Textured asphalt surface with painted lane markings, rumble strips at corners, grass/gravel runoff |
+| Cars | Filled circles (`arc`) in player colors, gear number as text | Top-down SVG car sprites in 6 player colors, visible orientation along track direction |
+| Cards | React `<button>` with CSS `linear-gradient` and text | Styled card components with distinct visual identity per type, proper card face layout, subtle texture |
+| Corner markers | Orange line + red circle with white number | Chevron warning signs, painted corner apex markers, visible braking zone shading |
+| Start/finish | Alternating black/white `fillRect` squares | Proper checkered flag pattern spanning the full road width, start light gantry |
+| HUD overlays | `rgba(0,0,0,0.75)` rounded rects with `sans-serif` text | Themed panels with consistent typography, iconography, and racing aesthetic |
+| Standings sidebar | Canvas-drawn text list | Styled leaderboard with position badges, gap indicators, car color swatches |
+| Phase indicator | Canvas text in top-left corner | Prominent banner with phase icon, action prompt, and countdown timer visual |
+| Grid positions | Small numbered circles | Staggered 2-wide grid with position numbers and player color indicators |
+| Background | Flat `#1a1a2e` fill | Grassy infield with subtle terrain variation, grandstand elements at key locations |
+
+### 1. Track Surface Rendering
+
+Replace the single-stroke road with a multi-layer track surface:
+
+**Road surface:**
+- Dark asphalt base with subtle noise texture (procedural, generated on a small offscreen canvas and tiled)
+- White dashed center line separating race line from off-line
+- Solid white edge lines on both sides of the road
+- Rumble strips (red-white alternating kerbs) on the inside of each corner
+- Corner braking zone: subtle gradient darkening on the approach to each corner (the 3-4 spaces before the corner line)
+
+**Road surroundings:**
+- Green grass fill for the area inside and outside the track loop
+- Gravel trap (tan/brown) patches at corner exits
+- Track boundary fence (thin line with periodic posts) on the outside edge
+
+**Corner presentation:**
+- Replace the orange line + red circle with:
+  - Painted red/white chevron signs on the outside of the corner
+  - Speed limit displayed on a diamond-shaped sign (like real motorsport corner markers)
+  - Apex painted on the road surface at the corner line
+
+**Start/finish area:**
+- Full-width checkered pattern painted on the road surface
+- Start light gantry rendered as a horizontal bar above the track with 5 light positions (off/red/green states for future race start animation)
+- Grid boxes painted on the road in the starting area, 2-wide stagger matching real F1 grids
+
+### 2. Car Sprites
+
+Replace the filled-circle car tokens with top-down SVG car sprites:
+
+**Car design (inline SVG, no external files):**
+- Simple top-down racing car silhouette: rounded rectangular body, visible front wing, rear wing, 4 wheels
+- Approximately 24x12 world units (fits within the current `carRadius: 12` footprint)
+- Each car rendered in one of the 6 player colors with a contrasting stripe/number
+- Car rotates to face along the track direction (use `space.angle` to orient the sprite)
+
+**Implementation approach:**
+- Define the car as SVG path data (a single `<path d="...">` or small set of paths)
+- At render time, draw to the Canvas using `ctx.save()`, `ctx.translate()`, `ctx.rotate()`, then path-draw, then `ctx.restore()`
+- No image loading, no external asset files — the car shape is defined in code as path coordinates
+- Pre-render each player color variant to an offscreen canvas at startup for performance
+
+**Car states:**
+- Normal: full opacity, clean rendering
+- Active player: white glow ring (keep existing, but apply to the car shape not a circle)
+- Boosting: speed lines trailing behind the car (3-4 short parallel lines fading to transparent)
+- Spinout: car rotates 180-360 degrees during the spinout animation
+- Eliminated/finished: checkered flag overlay or grayscale treatment
+
+### 3. Card Visual Design
+
+Upgrade the React card components from plain gradient buttons to styled game cards:
+
+**Card layout (all types):**
+- Fixed card proportions (roughly 5:7 ratio, keeping the existing 72x100px size)
+- Rounded corners with a subtle inner border/frame
+- Card type icon in the top-left corner
+- Value/name prominently centered
+- Card type name along the bottom edge
+- Subtle paper/linen texture background (CSS `background-image` with a tiny repeating pattern or `filter` noise)
+
+**Per-type visual identity:**
+
+| Type | Background | Icon | Primary display |
+|------|-----------|------|-----------------|
+| Speed | Deep blue with white racing stripe | Speedometer | Large bold number (1-4) |
+| Heat | Dark crimson, ember glow at edges | Flame | Flame icon, "HEAT" text |
+| Stress | Electric yellow, hazard diagonal stripes | Lightning bolt | Bolt icon, "STRESS" text |
+| Upgrade | Emerald green, mechanical texture | Gear/wrench | Effect name + value |
+
+**Card interaction states (CSS transitions):**
+- Default: flat, slight drop shadow
+- Hover: slight lift (translateY -2px), shadow expands
+- Selected: rises (translateY -10px), golden border glow, stronger shadow
+- Disabled/unplayable: desaturated, reduced opacity, no pointer events
+- Heat cards in hand: pulsing subtle red border to convey "stuck"
+
+**Card flip animation:**
+- During the Reveal & Move phase, played cards should flip from face-down (showing a card back with the Heat logo/pattern) to face-up
+- CSS `transform: rotateY(180deg)` with `backface-visibility: hidden` on front/back faces
+- Duration: 400ms with ease-out timing
+
+### 4. HUD & UI Chrome
+
+Replace the Canvas-drawn overlays with themed React components layered over the game board:
+
+**Design language:**
+- Dark semi-transparent panels with a 1px subtle border (not just `rgba(0,0,0,0.75)` boxes)
+- Consistent font stack: a racing/mechanical feel — use `"Barlow Condensed"` (Google Font, free) for headers/numbers, system sans-serif for body text
+- Accent color: warm amber/gold (`#F5A623`) for highlights and active states
+- Consistent 8px spacing grid
+
+**Standings panel (right side):**
+- Position badges: gold/silver/bronze colored circles for P1/P2/P3, plain for rest
+- Car color swatch next to each player name
+- Current lap shown as a progress bar segment, not just "L1" text
+- Gap to leader shown in spaces (e.g., "+3 spaces")
+- Highlight row for the local player
+- Subtle entry/exit animation when positions change
+
+**Phase banner (top center):**
+- Large phase name with an icon for each phase:
+  - Gear Shift: gear icon
+  - Play Cards: hand of cards icon
+  - Reveal & Move: eye/reveal icon
+  - React: lightning bolt icon
+  - Slipstream: wind/draft icon
+  - Corner Check: warning triangle icon
+- Action prompt below the phase name: "Select your gear", "Play 3 cards", "Waiting for opponents..."
+- If there's a timer, show a countdown bar that depletes left-to-right
+- Pulsing animation when it's the local player's turn to act
+
+**Turn order bar (top area):**
+- Horizontal strip of small car color tokens
+- Active player's token is larger and has a pointer/arrow indicator
+- Completed players in the current phase are slightly faded
+
+### 5. Game Event Visual Feedback
+
+Add visual effects for key game moments so the player *feels* what's happening:
+
+**Movement:**
+- Car animates along the track path (already implemented in `animation.ts`) — enhance with a subtle dust/particle trail
+- Speed value floats up from the car as a "+N" popup that fades out over 1 second
+
+**Boost:**
+- Orange flame burst behind the car when boost is activated
+- Camera briefly shakes or pulses (very subtle, 2-3px for 200ms)
+
+**Spinout:**
+- Car rotation animation (already exists) — add tire smoke puffs (2-3 small circles that expand and fade)
+- Screen edge briefly flashes red
+- "SPINOUT!" text slam-zooms and fades at the spinout location
+
+**Corner check pass:**
+- Brief green checkmark flash at the corner
+- Subtle green pulse on the speed limit sign
+
+**Corner check fail (heat payment):**
+- Corner sign flashes red
+- Heat cards visually fly from the engine zone to the discard pile (in the player dashboard)
+
+**Slipstream:**
+- Replace the current dashed-line indicator with a visible draft/wind effect: semi-transparent curved lines flowing from the car ahead to the car behind
+- Brief speed burst animation on the slipstreaming car
+
+**Race finish:**
+- Checkered flag waves across the screen when a car crosses the finish line on the final lap
+- Final standings appear in a podium-style reveal with position animations
+
+### 6. Track-Specific Visual Character
+
+Each of the 4 base tracks should have a visual identity beyond just their layout shape:
+
+| Track | Palette | Infield | Surroundings |
+|-------|---------|---------|--------------|
+| USA | Red-white-blue accents, concrete barriers | Desert sand, cacti silhouettes | Stadium grandstands |
+| Italy | Italian tricolor accents, red kerbs | Manicured grass, cypress tree silhouettes | Historic buildings |
+| France | Blue-white-red accents | Lavender field purple tint | Rolling hills |
+| Great Britain | Green-white accents | Lush deep green grass | Overcast sky tint, hedge silhouettes |
+
+Implementation: each track defines a `VisualTheme` object with:
+- `kerbColors: [string, string]` — alternating kerb stripe colors
+- `infieldColor: string` — grass/ground fill
+- `accentColor: string` — used on signs, barriers, UI highlights
+- `surroundElements: SurroundElement[]` — positioned decorative elements (silhouettes) rendered outside the track boundary
+- `skyGradient: [string, string]` — background gradient (top to bottom)
+
+These are cosmetic only — no gameplay impact, no collision, just visual flavor drawn behind the track.
+
+## Acceptance Criteria
+
+### Track Surface
+- [ ] Road surface has a visible asphalt texture (not a flat solid color)
+- [ ] White dashed center line visible between race line and off-line
+- [ ] Solid white edge lines on both sides of the road
+- [ ] Red-white rumble strip kerbs render on the inside of every corner
+- [ ] Corner braking zones show a subtle darkening on the approach (3-4 spaces before the corner)
+- [ ] Green grass infield fills the space inside and outside the track loop
+- [ ] Gravel trap patches visible at corner exits
+- [ ] Start/finish is a full-width checkered pattern on the road surface
+- [ ] Starting grid shows 2-wide staggered boxes painted on the road
+
+### Car Sprites
+- [ ] Cars render as top-down car silhouettes, not circles
+- [ ] Cars rotate to face along the track direction at their current space
+- [ ] All 6 player colors produce visually distinct car sprites
+- [ ] Active player car has a glow/highlight effect
+- [ ] Boosting cars show speed lines trailing behind
+- [ ] Spinout animation includes car rotation (not just position change)
+- [ ] Car sprites are defined as inline path data (no external image files)
+- [ ] Rendering performance is equivalent or better than current circle rendering (pre-rendered offscreen canvases)
+
+### Card Visuals
+- [ ] Cards have a framed layout with type icon, value, and type name
+- [ ] Speed cards are distinctly blue with large bold numbers
+- [ ] Heat cards have a crimson ember appearance
+- [ ] Stress cards have yellow hazard styling
+- [ ] Upgrade cards have green mechanical styling
+- [ ] Hover state lifts the card and expands shadow
+- [ ] Selected state raises the card with a golden border glow
+- [ ] Heat cards in hand pulse with a subtle red border
+- [ ] Card flip animation plays during the Reveal & Move phase (face-down to face-up)
+- [ ] Card back design shows a consistent pattern/logo
+
+### HUD & Overlays
+- [ ] Standings panel shows position badges (gold/silver/bronze for top 3)
+- [ ] Standings panel highlights the local player's row
+- [ ] Phase banner displays phase icon + name + action prompt
+- [ ] Phase banner pulses when it's the local player's turn to act
+- [ ] Turn order bar shows car color tokens with active player indicator
+- [ ] All HUD text uses a consistent, readable font (not default sans-serif)
+- [ ] HUD panels have themed borders and consistent spacing
+
+### Visual Feedback
+- [ ] Car movement shows a floating "+N speed" popup
+- [ ] Boost triggers a flame burst visual effect behind the car
+- [ ] Spinout shows tire smoke puffs and "SPINOUT!" text
+- [ ] Corner check pass shows a green checkmark flash
+- [ ] Corner check fail flashes the corner sign red
+- [ ] Slipstream shows a flowing draft/wind effect between the two cars
+- [ ] Race finish triggers a checkered flag animation across the screen
+
+### Track Themes
+- [ ] Each of the 4 base tracks has a distinct visual theme (different infield color, accents, surroundings)
+- [ ] Track theme is applied automatically based on which track is loaded
+- [ ] Visual theme is purely cosmetic — no impact on gameplay logic or tests
+- [ ] Decorative surround elements (silhouettes) render outside the track boundary
+
+### Performance & Compatibility
+- [ ] All visual enhancements render at 30+ FPS with 6 cars on track
+- [ ] No external image files required (all assets are inline SVG paths, procedural textures, or CSS)
+- [ ] Works on Chrome, Firefox, and Safari (latest versions)
+- [ ] Responsive on desktop (1024px+) and tablet (768px+)
+- [ ] Existing unit tests continue to pass (visual changes don't break game logic)
