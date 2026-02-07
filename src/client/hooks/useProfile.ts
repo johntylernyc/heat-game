@@ -10,7 +10,7 @@ import {
   type PlayerProfile,
   type PlayerStats,
   type GameHistoryEntry,
-} from '../profile.js';
+} from '../profileStore.js';
 
 export function useProfile() {
   const [profile, setProfile] = useState<PlayerProfile | null>(() => loadProfile());

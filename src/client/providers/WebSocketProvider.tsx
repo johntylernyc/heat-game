@@ -4,7 +4,7 @@ import { useSession } from '../hooks/useSession.js';
 import { useWebSocket, type ConnectionStatus } from '../hooks/useWebSocket.js';
 import { useGameState, type GameStoreState } from '../hooks/useGameState.js';
 import type { ServerMessage, ClientMessage } from '../../server/types.js';
-import { loadProfile, recordQualifyingResult, recordRaceResult } from '../profile.js';
+import { loadProfile, recordQualifyingResult, recordRaceResult } from '../profileStore.js';
 
 const ACTIVE_ROOM_KEY = 'heat-active-room';
 
