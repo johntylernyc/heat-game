@@ -501,3 +501,93 @@ describe('stale action handling', () => {
     expect(conn1.messages.length).toBe(msgsBefore);
   });
 });
+
+describe('simultaneous phase error recovery (ht-jztc)', () => {
+  it('clears pendingActions when batch processing throws', () => {
+    const room = createTestRoom(2);
+    const { registry } = createMockRegistry(room);
+    startGame(room, registry);
+
+    expect(room.gameState!.phase).toBe('gear-shift');
+    expect(room.gameState!.players[0].gear).toBe(1);
+
+    // Player 0 submits invalid gear (1 → 4 = diff 3, exceeds max shift of 2)
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 4 }, registry);
+    // Player 1 submits valid gear — triggers batch which will throw
+    handleGameAction(room, 'player-1', { type: 'gear-shift', targetGear: 2 }, registry);
+
+    // pendingActions must be cleared despite the error
+    expect(room.pendingActions.size).toBe(0);
+  });
+
+  it('restarts the phase after batch processing error', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    const conn0 = connections.get('player-0')!;
+    const phaseChangedBefore = getMessagesByType(conn0, 'phase-changed').length;
+
+    // Force invalid action into batch
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 4 }, registry);
+    handleGameAction(room, 'player-1', { type: 'gear-shift', targetGear: 2 }, registry);
+
+    // Phase should still be gear-shift (restarted, not stuck)
+    expect(room.gameState!.phase).toBe('gear-shift');
+
+    // Players should receive a fresh phase-changed from the restart
+    const phaseChangedAfter = getMessagesByType(conn0, 'phase-changed').length;
+    expect(phaseChangedAfter).toBeGreaterThan(phaseChangedBefore);
+  });
+
+  it('allows players to resubmit after batch processing error', () => {
+    const room = createTestRoom(2);
+    const { registry } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // First attempt: invalid gear causes error
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 4 }, registry);
+    handleGameAction(room, 'player-1', { type: 'gear-shift', targetGear: 2 }, registry);
+    expect(room.gameState!.phase).toBe('gear-shift');
+
+    // Second attempt: valid gears should succeed
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 2 }, registry);
+    handleGameAction(room, 'player-1', { type: 'gear-shift', targetGear: 2 }, registry);
+
+    expect(room.gameState!.phase).toBe('play-cards');
+  });
+
+  it('sends error to the triggering player', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Player 0 submits invalid gear
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 4 }, registry);
+
+    // Player 1's submission triggers the batch — error goes to player-1
+    const conn1 = connections.get('player-1')!;
+    const errorsBefore = getMessagesByType(conn1, 'error').length;
+
+    handleGameAction(room, 'player-1', { type: 'gear-shift', targetGear: 2 }, registry);
+
+    const errorsAfter = getMessagesByType(conn1, 'error');
+    expect(errorsAfter.length).toBe(errorsBefore + 1);
+  });
+
+  it('turn timer can recover after batch processing error', () => {
+    const room = createTestRoom(2);
+    room.config.turnTimeoutMs = 5000;
+    const { registry } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Force invalid action into batch
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 4 }, registry);
+    handleGameAction(room, 'player-1', { type: 'gear-shift', targetGear: 2 }, registry);
+
+    // pendingActions cleared — fillDefaultActions will work on next timeout
+    expect(room.pendingActions.size).toBe(0);
+    // Turn timer was restarted by beginPhase in the recovery path
+    expect(room.turnTimer).not.toBeNull();
+  });
+});
