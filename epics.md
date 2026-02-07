@@ -1071,15 +1071,23 @@ These are cosmetic only — no gameplay impact, no collision, just visual flavor
 
 ---
 
-# Epic: Qualifying Laps — Single-Player Local Play Mode
+# Epic: Qualifying Laps — Single-Player Mode
 
 - type: epic
 - priority: 1
-- labels: epic, phase-2, frontend, backend, gameplay, testing
+- labels: epic, phase-2, frontend, backend, gameplay
 
 ## Description
 
-Add a single-player "Qualifying Laps" mode that lets one person run laps on any track without needing opponents. This serves two purposes: it gives developers and testers a fast way to exercise the full gameplay loop locally, and it gives players a way to learn tracks, practice heat management, and experiment with gear strategy before entering a multiplayer race.
+Add a single-player "Qualifying Laps" mode so anyone can play the game solo — no lobby, no waiting for opponents. When a player opens the app and nobody else is around, they should be able to jump straight into a solo session, learn the mechanics, practice heat management, and get comfortable with each track before joining a multiplayer race.
+
+This is a core gameplay mode, not a debug feature. In real motorsport, qualifying is a solo time trial where each driver pushes hot laps to set their grid position. Our qualifying mode captures that fantasy: just you, the track, and your deck. Every mechanic works — gear shifts, card play, corners, heat payment, boost, cooldown, spinouts, deck cycling — so the skills you build in qualifying transfer directly to multiplayer.
+
+**Why this matters for the game:**
+- **Onboarding**: Heat has complex interlocking mechanics (gear-based card counts, heat as a resource, corner speed limits, deck management). Throwing a new player into a 6-player race cold is overwhelming. Qualifying lets them learn one concept at a time at their own pace.
+- **Accessibility**: Not everyone has 5 friends online at the same time. A game that can't be played solo has a much smaller audience. Qualifying makes the app useful from the moment someone opens it.
+- **Track mastery**: Each track has different corner layouts, speed limits, and pacing demands. Qualifying lets players learn a track's rhythm before racing on it competitively.
+- **Always available**: No server coordination, no waiting room, no countdown. Click, pick a track, drive.
 
 Today the game cannot be played solo. Three layers enforce a 2-player minimum:
 
@@ -1087,17 +1095,20 @@ Today the game cannot be played solo. Three layers enforce a 2-player minimum:
 2. **`setupRace()` in `race.ts`** (line 69): `if (playerIds.length < 2) throw`
 3. **`canStartGame()` in `room.ts`** (line 148): `room.playerIds.length < 2` returns false
 
-Qualifying mode needs all three relaxed to allow exactly 1 human player.
+All three must be relaxed to allow exactly 1 human player in qualifying mode.
 
-### What "Qualifying Laps" means thematically
+### The qualifying experience
 
-In real motorsport, qualifying is a solo time trial — each driver runs hot laps alone to set their grid position for the race. Our qualifying mode captures this:
+From the player's perspective:
 
-- You're alone on the track
-- You run a set number of laps (1-3, player's choice)
-- The game tracks your best lap time (total spaces moved per lap, fewer rounds = faster)
-- You manage your heat, cards, and gears exactly like a real race — the full 9-phase loop runs
-- No opponents means no adrenaline, no slipstream, no position jockeying — just you vs. the track
+1. Open the app → Home page shows three options: **Create Game**, **Join Game**, **Qualifying Laps**
+2. Click **Qualifying Laps** → Simple setup: pick a track, pick laps (1–3), pick your car color
+3. Click **Start** → You're immediately on the track, first round, gear shift phase
+4. Play through every phase at your own pace — no timers, no "waiting for opponents", phases advance the instant you submit
+5. Complete your laps → Results screen shows your lap times, best lap, total time
+6. Choose: **Run Again** (same track), **Try Another Track**, or **Back to Home** (and into a multiplayer lobby now that you know how to play)
+
+The goal is zero friction from "I want to try this game" to "I'm playing."
 
 ### Engine changes (backend)
 
@@ -1150,8 +1161,8 @@ The `advanceSequentialPhase()` and phase transitions should check this and skip 
 - When `mode === 'qualifying'`:
   - `maxPlayers` is forced to 1
   - `canStartGame()` returns true when the solo player is ready (no 2-player minimum)
-  - Turn timer is disabled (no time pressure in qualifying)
-  - Room code is still generated (useful if the player wants to share their session link for spectating later)
+  - Turn timer is disabled (no time pressure — the player learns at their own pace)
+  - Room code is still generated (useful if spectating is added later)
 
 **`canStartGame()` update:**
 
@@ -1173,52 +1184,49 @@ export function canStartGame(room: Room): boolean {
 
 **Home page — new entry point:**
 - Add a third button alongside "Create Game" and "Join Game": **"Qualifying Laps"**
-- Qualifying button is prominent and labeled for solo play: "Practice solo on any track"
+- Subtitle: "Practice solo — learn tracks and mechanics at your own pace"
+- Visually equal to the other two buttons (not tucked away as a secondary option)
 
-**Qualifying setup screen:**
-- Simplified lobby (no waiting for other players):
-  - Track selector (dropdown or visual grid of the 4 tracks with preview)
-  - Lap count selector (1, 2, or 3 laps)
-  - Car color picker
-  - "Start Qualifying" button (no ready-up needed, immediate start)
-- Can be a simplified version of the Lobby page or a dedicated `/qualifying` route
+**Qualifying setup screen (`/qualifying` route):**
+- Streamlined, no waiting room:
+  - **Track selector**: Visual grid showing the 4 tracks with name and a brief character note (e.g., "USA — Long straights, tight turns"). Clicking a track selects it with a highlight.
+  - **Lap count selector**: 1, 2, or 3 laps (default 2 — enough to experience deck cycling)
+  - **Car color picker**: 6 color swatches, pick one
+  - **"Start Qualifying"** button — immediate start, no ready-up
+- First-time hint text: "Qualifying runs you through a full race solo. Learn gear management, corner braking, and heat strategy before racing others."
 
 **In-game qualifying HUD adjustments:**
-- Hide the standings sidebar (no opponents)
-- Hide the turn order bar (only 1 player)
-- Replace standings with a **Lap Timer panel**:
+- **Hide** the standings sidebar (no opponents to rank against)
+- **Hide** the turn order bar (only 1 player)
+- Replace standings with a **Lap Timer panel** (right side):
   - Current lap number and target (e.g., "Lap 2 / 3")
   - Rounds elapsed this lap
-  - Best lap time so far (if on lap 2+)
-  - Mini lap history (Lap 1: 4 rounds, Lap 2: 3 rounds, ...)
+  - Best lap time so far (shown from lap 2 onward)
+  - Mini lap history: completed laps with their round counts
 - Phase banner still shows — the player still needs to know what action is required
-- Skip the "waiting for other players" state entirely — phases advance as soon as the solo player submits
+- **No "waiting for opponents" state** — phases advance the instant the solo player submits their action
+- Optional: brief contextual tips during the first qualifying session (e.g., during gear shift: "Higher gears play more cards but have less cooldown", during corner check: "Speed over the limit costs Heat from your engine")
 
 **Qualifying results screen:**
-- Shown after all laps complete, instead of the normal race standings
-- Display:
-  - Track name
-  - Total laps and total rounds
-  - Per-lap times (round count per lap)
-  - Best lap time highlighted
-  - "Play Again" button (restart qualifying on the same track)
-  - "Change Track" button (return to qualifying setup)
-  - "Back to Home" button
+- Displayed after all laps complete
+- **Track name** and visual identity
+- **Per-lap breakdown**: round count per lap, displayed as a simple table or timeline
+- **Best lap** highlighted with an accent color
+- **Total time** (sum of all lap round counts)
+- Three action buttons:
+  - **"Run Again"** — restart qualifying on the same track and settings
+  - **"Try Another Track"** — return to qualifying setup
+  - **"Race Online"** — go to Home page to create/join a multiplayer game (nudge toward multiplayer after they've practiced)
 
-### Testing value
+### Secondary benefit: enables automated testing
 
-This mode is critical for development testing because:
+As a secondary benefit, qualifying mode also enables end-to-end automated testing. Barry (mcp-playwright) can drive a complete qualifying session:
+1. Navigate to home → click "Qualifying Laps"
+2. Select a track → start session
+3. Exercise each phase (shift gear, play cards, boost/cooldown, discard)
+4. Complete laps → verify results screen
 
-- **No coordination needed**: A developer can open one browser tab and immediately exercise the full gameplay loop — gear shifts, card play, reveal, corners, heat management, deck cycling
-- **Fast iteration**: No waiting for other players to connect or submit actions
-- **Deterministic debugging**: With one player, state transitions are fully predictable — easier to reproduce and debug issues
-- **Visual testing**: Barry (mcp-playwright) can drive a qualifying session end-to-end by:
-  1. Navigate to home page
-  2. Click "Qualifying Laps"
-  3. Select a track and start
-  4. Interact with each phase (shift gear, play cards, boost/cooldown, discard)
-  5. Complete laps and verify the results screen
-  6. Screenshot at each phase to verify visual rendering
+This is valuable but secondary to the primary goal of giving players a way to play solo.
 
 ## Acceptance Criteria
 
@@ -1243,17 +1251,19 @@ This mode is critical for development testing because:
 - [ ] State partition sends full state to the solo player
 
 ### Frontend
-- [ ] Home page shows a "Qualifying Laps" button
-- [ ] Qualifying setup screen lets the player choose track, lap count, and car color
-- [ ] "Start Qualifying" immediately begins the session (no ready-up wait)
+- [ ] Home page shows a "Qualifying Laps" button with equal visual prominence to Create/Join
+- [ ] Qualifying setup screen shows track selection, lap count, and car color
+- [ ] Track selector displays all 4 tracks with names and brief descriptions
+- [ ] "Start Qualifying" immediately begins the session (no ready-up, no waiting room)
 - [ ] In-game HUD hides standings sidebar and turn order bar during qualifying
 - [ ] Lap Timer panel shows current lap, rounds elapsed, and best lap time
 - [ ] Phases advance immediately after the solo player submits (no "waiting for opponents" state)
 - [ ] Qualifying results screen shows per-lap times, best lap, and total time
-- [ ] "Play Again" restarts qualifying on the same track
-- [ ] "Change Track" returns to the qualifying setup screen
+- [ ] "Run Again" restarts qualifying on the same track
+- [ ] "Try Another Track" returns to the qualifying setup screen
+- [ ] "Race Online" navigates to the Home page for multiplayer
 
-### Integration / Testing
-- [ ] A complete qualifying session can be played end-to-end in a single browser tab: select track, run laps, see results
-- [ ] `npm run dev` supports qualifying mode with no additional setup
-- [ ] All game mechanics are exercisable in qualifying: gear shifting, card play, stress resolution, boost, cooldown, corner heat payment, spinout, deck reshuffling
+### Player Experience
+- [ ] A new player can go from opening the app to playing their first qualifying lap in under 30 seconds (3 clicks: Qualifying Laps → pick track → Start)
+- [ ] All core mechanics are learnable in qualifying: gear shifting, card play, stress resolution, boost, cooldown, corner heat payment, spinout, deck reshuffling
+- [ ] The qualifying flow naturally funnels toward multiplayer via the "Race Online" button on the results screen
