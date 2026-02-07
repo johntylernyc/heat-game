@@ -59,6 +59,8 @@ interface ServerState {
 
 interface WsConnection extends Connection {
   ws: WebSocket;
+  /** Set to true on pong receipt; cleared before each ping. */
+  isAlive: boolean;
 }
 
 export interface HeatServerConfig {
@@ -69,6 +71,8 @@ export interface HeatServerConfig {
   roomCleanupMs?: number;
   /** Grace period before deleting empty waiting rooms (ms). Default 30000. */
   waitingRoomGracePeriodMs?: number;
+  /** Interval between server-initiated WebSocket pings (ms). Default 30000. 0 = disabled. */
+  heartbeatIntervalMs?: number;
 }
 
 export interface HeatServer {
@@ -127,6 +131,7 @@ export function createHeatServer(config: HeatServerConfig): HeatServer {
       playerId,
       roomId: null,
       ws,
+      isAlive: true,
       send(message: ServerMessage) {
         sendJson(ws, message);
       },
@@ -143,9 +148,19 @@ export function createHeatServer(config: HeatServerConfig): HeatServer {
       playerId,
     });
 
+    // Mark connection alive when native pong received
+    ws.on('pong', () => {
+      conn.isAlive = true;
+    });
+
     ws.on('message', (data: Buffer | string) => {
       try {
         const message = JSON.parse(data.toString()) as ClientMessage;
+        // Application-level ping: respond immediately
+        if (message.type === 'ping') {
+          sendJson(ws, { type: 'pong' });
+          return;
+        }
         handleMessage(state, conn, message, registry, config);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Invalid message';
@@ -170,9 +185,28 @@ export function createHeatServer(config: HeatServerConfig): HeatServer {
     }, config.roomCleanupMs);
   }
 
+  // Heartbeat: ping all connections periodically to detect zombie connections.
+  // Connections that don't respond with a pong before the next ping are terminated.
+  const heartbeatMs = config.heartbeatIntervalMs ?? 30_000;
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  if (heartbeatMs > 0) {
+    heartbeatInterval = setInterval(() => {
+      for (const conn of state.connections.values()) {
+        if (!conn.isAlive) {
+          // No pong since last ping — terminate the zombie connection
+          conn.ws.terminate();
+          continue;
+        }
+        conn.isAlive = false;
+        conn.ws.ping();
+      }
+    }, heartbeatMs);
+  }
+
   return {
     wss,
     close() {
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
       if (cleanupInterval) clearInterval(cleanupInterval);
       // Cancel all pending room cleanup timers
       for (const timer of state.roomCleanupTimers.values()) {
