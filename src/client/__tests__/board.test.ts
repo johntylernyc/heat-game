@@ -77,6 +77,28 @@ describe('buildStandings', () => {
     expect(standings[0].rank).toBe(1);
   });
 
+  it('uses display names from playerInfo when provided', () => {
+    const cars: CarState[] = [
+      { playerId: 'player-abc123', color: '#f00', position: 10, spot: 'raceLine', lapCount: 1, gear: 1, speed: 0 },
+      { playerId: 'player-def456', color: '#0f0', position: 5, spot: 'raceLine', lapCount: 1, gear: 1, speed: 0 },
+    ];
+    const playerInfo = {
+      'player-abc123': { displayName: 'Alice' },
+      'player-def456': { displayName: 'Bob' },
+    };
+    const standings = buildStandings(cars, playerInfo);
+    expect(standings[0].displayName).toBe('Alice');
+    expect(standings[1].displayName).toBe('Bob');
+  });
+
+  it('falls back to playerId when playerInfo is missing', () => {
+    const cars: CarState[] = [
+      { playerId: 'player-abc123', color: '#f00', position: 10, spot: 'raceLine', lapCount: 1, gear: 1, speed: 0 },
+    ];
+    const standings = buildStandings(cars);
+    expect(standings[0].displayName).toBe('player-abc123');
+  });
+
   it('ranks 6 cars correctly', () => {
     const cars: CarState[] = [
       { playerId: 'a', color: '#f00', position: 5, spot: 'raceLine', lapCount: 0, gear: 1, speed: 0 },

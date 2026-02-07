@@ -8,7 +8,7 @@ import { OpponentPanel } from '../components/OpponentPanel.js';
 import type { ClientGameState, QualifyingResultMessage, RaceResultMessage } from '../../server/types.js';
 import type { Gear } from '../../types.js';
 import { isSlipstreamEligible } from '../../engine.js';
-import { loadStats } from '../profile.js';
+import { loadStats } from '../profileStore.js';
 import { createGameBoard, buildCarStates, buildStandings } from '../board.js';
 import type { GameBoard } from '../board.js';
 import { PLAYER_COLORS } from '../types.js';
@@ -240,7 +240,7 @@ export function Game() {
 
     const totalPlayers = 1 + gs.opponents.length;
     const cars = buildCarStates(gs.self, gs.opponents, gs.playerIndex, totalPlayers);
-    const carStandings = buildStandings(cars);
+    const carStandings = buildStandings(cars, gs.playerInfo);
 
     // Slipstream indicator: show when player is eligible during slipstream phase
     let slipstream: [number, number, string] | null = null;

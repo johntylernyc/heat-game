@@ -129,6 +129,7 @@ export const DEFAULT_BOARD_CONFIG: BoardConfig = {
 export interface StandingEntry {
   rank: number;
   playerId: string;
+  displayName: string;
   color: string;
   lapCount: number;
   position: number;

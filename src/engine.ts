@@ -975,7 +975,7 @@ function replacePlayer(
  * Advance through a sequential phase: move to the next player in turn order,
  * or transition to the next phase if all players have been processed.
  */
-function advanceSequentialPhase(
+export function advanceSequentialPhase(
   state: GameState,
   currentPlayerIndex: number,
   currentPhase: GamePhase,

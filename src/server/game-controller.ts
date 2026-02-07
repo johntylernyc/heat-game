@@ -31,6 +31,7 @@ import {
   executeReplenishPhase,
   isClutteredHand,
   isSlipstreamEligible,
+  advanceSequentialPhase,
 } from '../engine.js';
 import type { GearSelection, CardSelection, DiscardSelection } from '../engine.js';
 import type {
@@ -441,10 +442,10 @@ function executeSequentialAutoPhase(room: Room, registry: ConnectionRegistry): v
   // Process all players in sequence until the phase advances
   const currentPhase = state.phase;
 
-  try {
-    while (state.phase === currentPhase) {
-      const playerIndex = state.activePlayerIndex;
+  while (state.phase === currentPhase) {
+    const playerIndex = state.activePlayerIndex;
 
+    try {
       switch (currentPhase) {
         case 'reveal-and-move':
           state = executeRevealAndMove(state, playerIndex, room.rng!);
@@ -454,19 +455,18 @@ function executeSequentialAutoPhase(room: Room, registry: ConnectionRegistry): v
           state = executeCheckCorner(state, playerIndex);
           break;
       }
+    } catch (err: unknown) {
+      // If a player's auto-phase execution fails, skip them to prevent
+      // the game from getting permanently stuck at this phase.
+      console.error(
+        `Error in ${currentPhase} for player ${playerIndex}, skipping:`,
+        err instanceof Error ? err.message : err,
+      );
+      const nextPhase = currentPhase === 'check-corner' ? 'discard' : 'adrenaline';
+      state = advanceSequentialPhase(state, playerIndex, currentPhase, nextPhase);
+    }
 
-      room.gameState = state;
-    }
-  } catch (_err) {
-    // If an auto-phase throws (e.g., executeCheckCorner), force-advance to the
-    // next phase. Without this, the game permanently soft-locks at the current
-    // phase since there's no player input to re-trigger processing, and
-    // reconnection only resends state without re-running auto phases (ht-rcak).
-    const nextPhase = SEQUENTIAL_AUTO_NEXT_PHASE[currentPhase];
-    if (nextPhase) {
-      state = room.gameState!;
-      room.gameState = { ...state, phase: nextPhase };
-    }
+    room.gameState = state;
   }
 
   advancePhase(room, registry);
@@ -886,6 +886,13 @@ export function handleReconnection(
     type: 'player-reconnected',
     playerId,
   });
+
+  // Recovery: if the game is stuck in a sequential-auto phase (e.g., check-corner
+  // after a prior error), re-trigger auto-phase processing to unstick it.
+  const phaseType = getPhaseType(room.gameState.phase);
+  if (phaseType === 'sequential-auto') {
+    executeSequentialAutoPhase(room, registry);
+  }
 }
 
 /**

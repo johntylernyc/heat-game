@@ -1129,3 +1129,42 @@ describe('qualifying mode', () => {
     expect(startedMsg.state.mode).toBe('qualifying');
   });
 });
+
+describe('check-corner error recovery (ht-rcak)', () => {
+  it('recovers from executeCheckCorner error instead of getting stuck', () => {
+    const room = createTestRoom(2);
+    const { registry } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Force game to check-corner with an invalid activePlayerIndex pointing to
+    // a non-existent player. This causes executeCheckCorner to throw when it
+    // tries to access the player's state.
+    room.gameState!.phase = 'check-corner';
+    room.gameState!.activePlayerIndex = 5;
+    room.gameState!.turnOrder = [5];
+
+    // Trigger reconnection — detects stuck sequential-auto phase and re-triggers.
+    // Without the fix, the game would remain permanently stuck at check-corner
+    // because: (1) executeCheckCorner would throw uncaught, and (2) reconnection
+    // had no recovery logic for sequential-auto phases.
+    expect(() => handleReconnection(room, 'player-0', registry)).not.toThrow();
+
+    // Game should advance past check-corner (error caught, player skipped)
+    expect(room.gameState!.phase).not.toBe('check-corner');
+  });
+
+  it('reconnection at non-auto phase does not trigger auto-phase recovery', () => {
+    const room = createTestRoom(2);
+    const { registry } = createMockRegistry(room);
+    startGame(room, registry);
+
+    expect(room.gameState!.phase).toBe('gear-shift');
+
+    disconnectPlayer(room, 'player-1');
+    reconnectPlayer(room, 'player-1');
+    handleReconnection(room, 'player-1', registry);
+
+    // Simultaneous phase should not be re-triggered by reconnection
+    expect(room.gameState!.phase).toBe('gear-shift');
+  });
+});
