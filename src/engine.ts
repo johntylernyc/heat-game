@@ -18,6 +18,7 @@
 import type {
   Card,
   CornerDef,
+  GameMode,
   GameState,
   GamePhase,
   Gear,
@@ -51,6 +52,8 @@ export interface GameConfig {
   trackId?: string;
   /** Starting positions per player (index 0 = first player, etc.) */
   startingPositions?: number[];
+  /** Game mode: 'race' (default) or 'qualifying' for solo play. */
+  mode?: GameMode;
 }
 
 /**
@@ -60,9 +63,11 @@ export interface GameConfig {
 export function initGame(config: GameConfig): GameState {
   const { playerIds, lapTarget, seed } = config;
   const stressCount = config.stressCount ?? DEFAULT_STRESS_COUNT;
+  const mode = config.mode ?? 'race';
+  const minPlayers = mode === 'qualifying' ? 1 : 2;
 
-  if (playerIds.length < 2) {
-    throw new Error('Need at least 2 players');
+  if (playerIds.length < minPlayers) {
+    throw new Error(`Need at least ${minPlayers} players`);
   }
 
   const rng = createRng(seed);
@@ -88,6 +93,7 @@ export function initGame(config: GameConfig): GameState {
       adrenalineCooldownBonus: 0,
       playedCards: [],
       previousPosition: startPos,
+      lapRounds: [],
     };
 
     player = drawCards(player, HAND_SIZE, rng);
@@ -103,7 +109,8 @@ export function initGame(config: GameConfig): GameState {
     activePlayerIndex: 0,
     turnOrder,
     lapTarget,
-    raceStatus: 'racing',
+    raceStatus: mode === 'qualifying' ? 'qualifying' : 'racing',
+    mode,
     corners: config.corners ?? [],
     totalSpaces: config.totalSpaces ?? 100,
     startFinishLine: config.startFinishLine ?? 0,
@@ -697,7 +704,7 @@ export function executeReplenishPhase(
 
   // Check lap completion for all players
   for (let i = 0; i < players.length; i++) {
-    players = checkLapCompletion(players, i, state.totalSpaces);
+    players = checkLapCompletion(players, i, state.totalSpaces, state.round);
   }
 
   // Check if race is finished
@@ -901,14 +908,21 @@ function checkLapCompletion(
   players: PlayerState[],
   playerIndex: number,
   totalSpaces: number,
+  round: number,
 ): PlayerState[] {
   const player = players[playerIndex];
   const completedLaps = Math.floor(player.position / totalSpaces);
 
   if (completedLaps > player.lapCount) {
+    // Record the round for each newly completed lap
+    const lapRounds = [...player.lapRounds];
+    for (let lap = player.lapCount; lap < completedLaps; lap++) {
+      lapRounds.push(round);
+    }
     return replacePlayer(players, playerIndex, {
       ...player,
       lapCount: completedLaps,
+      lapRounds,
     });
   }
 
@@ -921,7 +935,11 @@ function checkRaceFinished(
   currentStatus: RaceStatus,
 ): RaceStatus {
   const anyFinished = players.some(p => p.lapCount >= lapTarget);
-  if (!anyFinished) return currentStatus === 'final-round' ? 'final-round' : 'racing';
+  if (!anyFinished) {
+    if (currentStatus === 'final-round') return 'final-round';
+    if (currentStatus === 'qualifying') return 'qualifying';
+    return 'racing';
+  }
   // First car crossed finish line this round — this round is the final round.
   // Since we're already at the end of the round (replenish), the race is finished.
   return 'finished';

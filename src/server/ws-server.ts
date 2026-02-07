@@ -220,6 +220,10 @@ function handleMessage(
       handleStartGame(state, conn, registry);
       break;
 
+    case 'start-qualifying':
+      handleStartQualifying(state, conn, message, registry, config);
+      break;
+
     default:
       // Game action — route to room's game controller
       handleGameActionMessage(state, conn, message, registry);
@@ -540,6 +544,56 @@ function handleStartGame(
     return;
   }
 
+  startGame(room, registry);
+}
+
+function handleStartQualifying(
+  state: ServerState,
+  conn: WsConnection,
+  message: ClientMessage & { type: 'start-qualifying' },
+  registry: ConnectionRegistry,
+  config: HeatServerConfig,
+): void {
+  if (conn.roomId) {
+    conn.send({ type: 'error', message: 'Already in a room' });
+    return;
+  }
+
+  const roomConfig: RoomConfig = {
+    trackId: message.trackId,
+    lapCount: Math.min(Math.max(message.lapCount, 1), 3),
+    maxPlayers: 1,
+    turnTimeoutMs: 0, // No timer in qualifying
+    mode: 'qualifying',
+  };
+
+  const room = createRoom(conn.playerId, roomConfig, message.displayName);
+
+  // Set car color if provided
+  if (message.carColor) {
+    setPlayerInfo(room, conn.playerId, undefined, message.carColor);
+  }
+
+  state.rooms.set(room.id, room);
+  state.roomsByCode.set(room.code, room);
+  state.playerRooms.set(conn.playerId, room.id);
+  conn.roomId = room.id;
+
+  // Update session with room info
+  const token = state.playerSessions.get(conn.playerId);
+  if (token) {
+    const session = state.sessions.get(token);
+    if (session) session.roomId = room.id;
+  }
+
+  conn.send({
+    type: 'room-created',
+    roomId: room.id,
+    roomCode: room.code,
+  });
+
+  // Auto-ready and start immediately — zero friction
+  setPlayerReady(room, conn.playerId, true);
   startGame(room, registry);
 }
 

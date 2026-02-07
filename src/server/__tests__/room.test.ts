@@ -445,3 +445,49 @@ describe('getLobbyState', () => {
     expect(getLobbyState(room).canStart).toBe(true);
   });
 });
+
+// -- Qualifying Mode --
+
+describe('qualifying mode', () => {
+  const qualifyingConfig: RoomConfig = {
+    trackId: 'usa',
+    lapCount: 1,
+    maxPlayers: 1,
+    turnTimeoutMs: 0,
+    mode: 'qualifying',
+  };
+
+  it('canStartGame returns true with 1 player in qualifying mode', () => {
+    const room = createRoom('solo', qualifyingConfig);
+    setPlayerReady(room, 'solo', true);
+    expect(canStartGame(room)).toBe(true);
+  });
+
+  it('canStartGame returns false with 1 player in race mode', () => {
+    const room = createRoom('solo', defaultConfig);
+    setPlayerReady(room, 'solo', true);
+    expect(canStartGame(room)).toBe(false);
+  });
+
+  it('updateRoomConfig allows maxPlayers=1 in qualifying mode', () => {
+    const room = createRoom('solo', qualifyingConfig);
+    const error = updateRoomConfig(room, { maxPlayers: 1 });
+    expect(error).toBeNull();
+    expect(room.config.maxPlayers).toBe(1);
+  });
+
+  it('updateRoomConfig clamps maxPlayers to 2 in race mode', () => {
+    const room = createRoom('host', defaultConfig);
+    const error = updateRoomConfig(room, { maxPlayers: 1 });
+    expect(error).toBeNull();
+    expect(room.config.maxPlayers).toBe(2); // Clamped to min 2
+  });
+
+  it('getLobbyState shows canStart=true for qualifying with 1 ready player', () => {
+    const room = createRoom('solo', qualifyingConfig);
+    setPlayerReady(room, 'solo', true);
+    const lobby = getLobbyState(room);
+    expect(lobby.canStart).toBe(true);
+    expect(lobby.players).toHaveLength(1);
+  });
+});

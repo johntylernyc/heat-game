@@ -7,6 +7,7 @@
 
 import type {
   Card,
+  GameMode,
   GamePhase,
   GameState,
   Gear,
@@ -40,6 +41,8 @@ export interface RoomConfig {
   turnTimeoutMs: number;
   /** RNG seed for deterministic game replay. Auto-generated if not provided. */
   seed?: number;
+  /** Game mode: 'race' (default) or 'qualifying' for solo play. */
+  mode?: GameMode;
 }
 
 export interface LobbyPlayer {
@@ -137,6 +140,14 @@ export interface StartGameMessage {
   type: 'start-game';
 }
 
+export interface StartQualifyingMessage {
+  type: 'start-qualifying';
+  trackId: string;
+  lapCount: number;
+  displayName: string;
+  carColor?: CarColor;
+}
+
 export interface GearShiftMessage {
   type: 'gear-shift';
   targetGear: Gear;
@@ -179,6 +190,7 @@ export type ClientMessage =
   | UpdateRoomConfigMessage
   | LeaveRoomMessage
   | StartGameMessage
+  | StartQualifyingMessage
   | GearShiftMessage
   | PlayCardsMessage
   | ReactCooldownMessage
@@ -310,6 +322,7 @@ export interface PrivatePlayerState {
   engineZone: Card[];
   hasBoosted: boolean;
   playedCards: Card[];
+  lapRounds: number[];
 }
 
 export interface ClientGameState {
@@ -320,6 +333,7 @@ export interface ClientGameState {
   turnOrder: number[];
   lapTarget: number;
   raceStatus: RaceStatus;
+  mode: GameMode;
   playerIndex: number;
   self: PrivatePlayerState;
   opponents: PublicPlayerState[];

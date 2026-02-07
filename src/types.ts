@@ -85,6 +85,8 @@ export interface PlayerState {
   playedCards: Card[];
   /** Position before this round's movement (for corner checks). */
   previousPosition: number;
+  /** Round number when each lap was completed (for qualifying lap times). */
+  lapRounds: number[];
 }
 
 // -- Game Phases --
@@ -102,9 +104,13 @@ export type GamePhase =
   | 'replenish'
   | 'finished';
 
+// -- Game Mode --
+
+export type GameMode = 'race' | 'qualifying';
+
 // -- Race Status --
 
-export type RaceStatus = 'setup' | 'racing' | 'final-round' | 'finished';
+export type RaceStatus = 'setup' | 'racing' | 'qualifying' | 'final-round' | 'finished';
 
 // -- Game State --
 
@@ -116,6 +122,8 @@ export interface GameState {
   turnOrder: number[];
   lapTarget: number;
   raceStatus: RaceStatus;
+  /** Game mode: 'race' for multiplayer, 'qualifying' for solo practice. */
+  mode: GameMode;
   /** Track corner definitions for corner speed checks. */
   corners: CornerDef[];
   /** Total number of spaces on the track loop. */

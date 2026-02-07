@@ -29,6 +29,7 @@ function makePrivateState(overrides: Partial<PrivatePlayerState> = {}): PrivateP
     engineZone: Array.from({ length: 6 }, () => ({ type: 'heat' as const })),
     hasBoosted: false,
     playedCards: [],
+    lapRounds: [],
     ...overrides,
   };
 }
@@ -45,6 +46,7 @@ function makeGameState(
     turnOrder: [0, 1],
     lapTarget: 2,
     raceStatus: 'racing',
+    mode: 'race',
     playerIndex: 0,
     self: makePrivateState(selfOverrides),
     opponents: [

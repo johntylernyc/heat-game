@@ -67,6 +67,7 @@ export function partitionState(
     turnOrder: state.turnOrder,
     lapTarget: state.lapTarget,
     raceStatus: state.raceStatus,
+    mode: state.mode,
     playerIndex,
     self,
     opponents,
@@ -92,6 +93,7 @@ export function buildPrivateState(player: PlayerState): PrivatePlayerState {
     engineZone: [...player.engineZone],
     hasBoosted: player.hasBoosted,
     playedCards: [...player.playedCards],
+    lapRounds: [...player.lapRounds],
   };
 }
 
