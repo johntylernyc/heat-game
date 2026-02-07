@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSession } from '../hooks/useSession.js';
 import { useWebSocketContext } from '../providers/WebSocketProvider.js';
 import { loadProfile, loadStats, createProfile } from '../profile.js';
+
+const ACTIVE_ROOM_KEY = 'heat-active-room';
 
 const styles = {
   container: {
@@ -158,8 +159,12 @@ const TRACKS = [
 
 export function Home() {
   const navigate = useNavigate();
-  const { activeRoom } = useSession();
   const { status, send, gameState } = useWebSocketContext();
+
+  // Read active room from localStorage (set by WebSocketProvider on lobby-state).
+  // This is a one-time read on mount — sufficient for the "Rejoin" banner since
+  // the page reloads or navigates when a room is joined.
+  const [activeRoom] = useState(() => localStorage.getItem(ACTIVE_ROOM_KEY));
 
   const profile = loadProfile();
   const stats = loadStats();

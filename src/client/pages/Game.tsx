@@ -1,7 +1,8 @@
 import { useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useSession } from '../hooks/useSession.js';
 import { useWebSocketContext } from '../providers/WebSocketProvider.js';
+
+const ACTIVE_ROOM_KEY = 'heat-active-room';
 import { PlayerDashboard } from '../components/PlayerDashboard.js';
 import { OpponentPanel } from '../components/OpponentPanel.js';
 import type { ClientGameState, QualifyingResultMessage, RaceResultMessage } from '../../server/types.js';
@@ -199,7 +200,6 @@ const styles = {
 export function Game() {
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
-  const { setActiveRoom } = useSession();
   const { status, send, gameState } = useWebSocketContext();
 
   const connected = status === 'connected';
@@ -268,7 +268,7 @@ export function Game() {
   }, [gs]);
 
   const handleBackToHome = () => {
-    setActiveRoom(null);
+    localStorage.removeItem(ACTIVE_ROOM_KEY);
     navigate('/');
   };
 

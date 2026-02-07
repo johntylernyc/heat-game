@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useSession } from '../hooks/useSession.js';
 import { useWebSocketContext } from '../providers/WebSocketProvider.js';
 import type { CarColor, LobbyPlayer } from '../../server/types.js';
+
+const ACTIVE_ROOM_KEY = 'heat-active-room';
 
 const CAR_COLORS: CarColor[] = ['red', 'blue', 'green', 'yellow', 'black', 'white'];
 
@@ -154,26 +155,25 @@ const styles = {
 export function Lobby() {
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
-  const { setActiveRoom } = useSession();
   const { status, send, gameState } = useWebSocketContext();
 
   const [timedOut, setTimedOut] = useState(false);
 
   const lobby = gameState.lobby;
+  // Track whether we have EVER received lobby data (survives re-renders).
+  // Once lobby arrives, we never need the timeout again for this mount.
+  const lobbyReceivedRef = useRef(false);
+  if (lobby) lobbyReceivedRef.current = true;
 
-  // Lobby timeout: if connected but no lobby state after LOBBY_TIMEOUT_MS, show error
+  // Lobby timeout: if connected but no lobby state after LOBBY_TIMEOUT_MS, show error.
+  // We use lobbyReceivedRef to avoid calling setTimedOut on every lobby-state update,
+  // which would be an unnecessary setState inside useEffect.
   useEffect(() => {
-    if (lobby || status !== 'connected') {
-      setTimedOut(false);
-      return;
-    }
+    if (lobbyReceivedRef.current || status !== 'connected') return;
 
-    const timer = setTimeout(() => {
-      if (!lobby) setTimedOut(true);
-    }, LOBBY_TIMEOUT_MS);
-
+    const timer = setTimeout(() => setTimedOut(true), LOBBY_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [lobby, status]);
+  }, [status]);
 
   // If room not found error or timeout, show error state
   if (timedOut || (gameState.error === 'Room not found')) {
@@ -189,7 +189,7 @@ export function Lobby() {
           <button
             style={styles.button}
             onClick={() => {
-              setActiveRoom(null);
+              localStorage.removeItem(ACTIVE_ROOM_KEY);
               navigate('/');
             }}
           >
@@ -224,7 +224,7 @@ export function Lobby() {
 
   const handleLeave = () => {
     send({ type: 'leave-room' });
-    setActiveRoom(null);
+    localStorage.removeItem(ACTIVE_ROOM_KEY);
     navigate('/');
   };
 
