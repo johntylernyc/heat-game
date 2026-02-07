@@ -658,6 +658,35 @@ describe('WebSocket server', () => {
     });
   });
 
+  it('responds to application-level ping with pong', async () => {
+    server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0, heartbeatIntervalMs: 0 });
+    const ws = await connect(TEST_PORT);
+
+    const pongPromise = waitForMessageOfType(ws, 'pong');
+    send(ws, { type: 'ping' });
+    const msg = await pongPromise;
+
+    expect(msg.type).toBe('pong');
+
+    ws.close();
+  });
+
+  it('terminates zombie connections via heartbeat', async () => {
+    // Use a very short heartbeat interval so the test completes quickly
+    server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0, heartbeatIntervalMs: 50 });
+    const ws = await connect(TEST_PORT);
+
+    // Suppress the native pong response so the server thinks the connection is dead
+    // @ts-expect-error -- accessing internal pong handler to override it
+    ws.pong = () => {};
+
+    // Wait for two heartbeat cycles: first sets isAlive=false, second terminates
+    await delay(150);
+
+    // Connection should be terminated by the server
+    expect(ws.readyState).toBe(WebSocket.CLOSED);
+  });
+
   it('supports session resumption', async () => {
     server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
     const { ws: ws1, sessionToken, playerId } = await connectWithSession(TEST_PORT);
