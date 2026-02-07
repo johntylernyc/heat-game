@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Room, ServerMessage, Connection, RoomConfig } from '../types.js';
 import type { ConnectionRegistry } from '../game-controller.js';
 import {
@@ -817,6 +817,82 @@ describe('submission-time content validation (ht-uhxf)', () => {
 });
 
 // -- Qualifying Mode --
+
+describe('timeout handling (ht-h9i4)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function createTimedRoom(playerCount: number = 2): Room {
+    const room = createRoom('player-0', { ...defaultConfig, turnTimeoutMs: 5000 });
+    for (let i = 1; i < playerCount; i++) {
+      joinRoom(room, `player-${i}`);
+    }
+    return room;
+  }
+
+  it('does not crash when timeout fires during play-cards with no pending actions', () => {
+    const room = createTimedRoom(2);
+    const { registry } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Advance to play-cards
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 1 }, registry);
+    handleGameAction(room, 'player-1', { type: 'gear-shift', targetGear: 1 }, registry);
+    expect(room.gameState!.phase).toBe('play-cards');
+
+    // Let timeout fire with NO pending play-cards actions
+    // This was the crash: handleTimeout → executeSimultaneousPhase → engine
+    // throw → re-throw escaped setTimeout → process crash
+    expect(() => vi.advanceTimersByTime(5000)).not.toThrow();
+
+    // Game should still be playable (phase restarted or advanced)
+    expect(room.status).toBe('playing');
+  });
+
+  it('does not crash when timeout fires during gear-shift with no pending actions', () => {
+    const room = createTimedRoom(2);
+    const { registry } = createMockRegistry(room);
+    startGame(room, registry);
+    expect(room.gameState!.phase).toBe('gear-shift');
+
+    // Let timeout fire with no pending actions
+    expect(() => vi.advanceTimersByTime(5000)).not.toThrow();
+    expect(room.status).toBe('playing');
+  });
+
+  it('advances phase when timeout fires and defaults are valid', () => {
+    const room = createTimedRoom(2);
+    const { registry } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Only player-0 submits gear shift
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 2 }, registry);
+    expect(room.gameState!.phase).toBe('gear-shift');
+
+    // Timeout fills default for player-1 (keep gear) and executes
+    vi.advanceTimersByTime(5000);
+    expect(room.gameState!.phase).toBe('play-cards');
+  });
+
+  it('does not crash when disconnection triggers simultaneous phase execution', () => {
+    const room = createTimedRoom(2);
+    const { registry } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Player 0 acts during gear-shift
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 1 }, registry);
+
+    // Player 1 disconnects — triggers allPlayersActed + executeSimultaneousPhase
+    disconnectPlayer(room, 'player-1');
+    expect(() => handleDisconnection(room, 'player-1', registry)).not.toThrow();
+    expect(room.status).toBe('playing');
+  });
+});
 
 describe('qualifying mode', () => {
   const qualifyingConfig: RoomConfig = {

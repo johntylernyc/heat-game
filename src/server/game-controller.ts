@@ -222,15 +222,20 @@ function executeSimultaneousPhase(
         executeDiscard(room, registry);
         break;
     }
-  } catch (err) {
+  } catch (_err) {
     // Batch processing failed (e.g., invalid gear shift slipped through).
     // Clear stale actions and restart the phase so the turn timer can
     // recover and players can resubmit. Without this, pendingActions
     // retains the invalid entries, fillDefaultActions skips those players,
     // and the game permanently soft-locks.
+    //
+    // We intentionally swallow the error after recovery. Re-throwing would
+    // propagate uncaught through handleTimeout's setTimeout callback (or
+    // handleDisconnection), crashing the entire WS server (ht-h9i4).
+    // The phase restart is sufficient recovery — players get a fresh
+    // phase-changed broadcast and can resubmit.
     room.pendingActions.clear();
     beginPhase(room, registry);
-    throw err;
   }
 }
 
@@ -494,12 +499,19 @@ function handleTimeout(room: Room, registry: ConnectionRegistry): void {
   const state = room.gameState;
   const phaseType = getPhaseType(state.phase);
 
-  if (phaseType === 'simultaneous') {
-    // Fill defaults for players who haven't acted, then execute
-    executeSimultaneousPhase(room, registry);
-  } else if (phaseType === 'sequential') {
-    // Auto-play the active player with default action
-    autoPlayDisconnected(room, state.activePlayerIndex, registry);
+  try {
+    if (phaseType === 'simultaneous') {
+      // Fill defaults for players who haven't acted, then execute
+      executeSimultaneousPhase(room, registry);
+    } else if (phaseType === 'sequential') {
+      // Auto-play the active player with default action
+      autoPlayDisconnected(room, state.activePlayerIndex, registry);
+    }
+  } catch (_err) {
+    // Defense-in-depth: never let errors escape setTimeout callbacks.
+    // executeSimultaneousPhase already handles its own recovery (clear +
+    // restart phase), so reaching here means something truly unexpected.
+    // Swallow to protect the WS server process (ht-h9i4).
   }
 }
 
