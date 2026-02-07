@@ -90,6 +90,36 @@ const styles = {
     cursor: 'pointer',
     marginTop: '2rem',
   },
+  standingsTable: {
+    width: '100%',
+    maxWidth: '500px',
+    margin: '1.5rem auto',
+    borderCollapse: 'collapse' as const,
+  },
+  standingsHeader: {
+    color: '#94a3b8',
+    fontSize: '0.75rem',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.1em',
+    padding: '0.5rem 1rem',
+    borderBottom: '1px solid #334155',
+    textAlign: 'left' as const,
+  },
+  standingsRow: (isFirst: boolean) => ({
+    background: isFirst ? 'rgba(255, 107, 53, 0.1)' : 'transparent',
+    borderBottom: '1px solid #1e293b',
+  }),
+  standingsCell: {
+    padding: '0.75rem 1rem',
+    color: '#e2e8f0',
+    fontSize: '0.95rem',
+  },
+  rankCell: (rank: number) => ({
+    padding: '0.75rem 1rem',
+    fontWeight: 'bold' as const,
+    fontSize: '1.1rem',
+    color: rank === 1 ? '#fbbf24' : rank === 2 ? '#94a3b8' : rank === 3 ? '#cd7f32' : '#e2e8f0',
+  }),
 };
 
 export function Game() {
@@ -114,6 +144,8 @@ export function Game() {
   const connected = status === 'connected';
   const gs = gameState.gameState;
   const appPhase = gameState.appPhase;
+  const standings = gameState.standings;
+  const lobbyPlayers = gameState.lobby?.players;
 
   const handleBackToHome = () => {
     setActiveRoom(null);
@@ -122,13 +154,39 @@ export function Game() {
 
   // Game over screen
   if (appPhase === 'finished') {
+    const displayName = (playerId: string) => {
+      const lp = lobbyPlayers?.find((p) => p.playerId === playerId);
+      return lp?.displayName ?? playerId;
+    };
+
     return (
       <div style={styles.container}>
         <div style={styles.gameOver}>
           <p style={styles.gameOverTitle}>Race Complete!</p>
-          <p style={{ color: '#aaa', marginBottom: '1rem' }}>
-            The race has ended. Check the final standings.
-          </p>
+          {standings && standings.length > 0 ? (
+            <table style={styles.standingsTable}>
+              <thead>
+                <tr>
+                  <th style={styles.standingsHeader}>Pos</th>
+                  <th style={styles.standingsHeader}>Driver</th>
+                  <th style={styles.standingsHeader}>Laps</th>
+                </tr>
+              </thead>
+              <tbody>
+                {standings.map((s) => (
+                  <tr key={s.playerId} style={styles.standingsRow(s.rank === 1)}>
+                    <td style={styles.rankCell(s.rank)}>{s.rank}</td>
+                    <td style={styles.standingsCell}>{displayName(s.playerId)}</td>
+                    <td style={styles.standingsCell}>{s.lapCount}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p style={{ color: '#aaa', marginBottom: '1rem' }}>
+              No standings data available.
+            </p>
+          )}
           <button style={styles.backButton} onClick={handleBackToHome}>
             Back to Home
           </button>
