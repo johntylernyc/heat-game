@@ -451,4 +451,66 @@ describe('WebSocket server', () => {
 
     ws2.close();
   });
+
+  it('preserves waiting room during SPA navigation (grace period)', async () => {
+    server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
+    const { ws: ws1, sessionToken } = await connectWithSession(TEST_PORT);
+
+    // Create a room (host is the only player)
+    const createPromise = waitForMessageOfType(ws1, 'room-created');
+    send(ws1, { type: 'create-room', trackId: 'usa', lapCount: 2, maxPlayers: 4, displayName: 'Alice' });
+    const created = await createPromise;
+    if (created.type !== 'room-created') throw new Error('Expected room-created');
+    const { roomCode } = created;
+
+    // Simulate SPA navigation: old page unmounts, WS closes
+    ws1.close();
+    await delay(50);
+
+    // Room should still exist (grace period hasn't expired)
+    const roomsByCode = server.getState().roomsByCode;
+    expect(roomsByCode.has(roomCode)).toBe(true);
+
+    // New page mounts, new WS connects and resumes session
+    const ws2 = await connect(TEST_PORT);
+    const lobbyPromise = waitForMessageOfType(ws2, 'lobby-state');
+    send(ws2, { type: 'resume-session', sessionToken });
+    const lobby = await lobbyPromise;
+
+    // Should successfully reconnect to the same room
+    expect(lobby.type).toBe('lobby-state');
+    if (lobby.type === 'lobby-state') {
+      expect(lobby.lobby.roomCode).toBe(roomCode);
+      expect(lobby.lobby.players).toHaveLength(1);
+      expect(lobby.lobby.players[0].isConnected).toBe(true);
+    }
+
+    ws2.close();
+  });
+
+  it('cleans up waiting room after grace period expires', async () => {
+    // Use a very short grace period for testing
+    server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0, waitingRoomGraceMs: 100 });
+
+    const { ws: ws1 } = await connectWithSession(TEST_PORT);
+
+    const createPromise = waitForMessageOfType(ws1, 'room-created');
+    send(ws1, { type: 'create-room', trackId: 'usa', lapCount: 2, maxPlayers: 4, displayName: 'Alice' });
+    const created = await createPromise;
+    if (created.type !== 'room-created') throw new Error('Expected room-created');
+    const { roomCode } = created;
+
+    // Disconnect — starts grace period
+    ws1.close();
+    await delay(50);
+
+    // Room still alive during grace period
+    expect(server.getState().roomsByCode.has(roomCode)).toBe(true);
+
+    // Wait for grace period to expire (100ms + buffer)
+    await delay(150);
+
+    // Room should now be cleaned up
+    expect(server.getState().roomsByCode.has(roomCode)).toBe(false);
+  });
 });
