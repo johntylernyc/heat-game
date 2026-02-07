@@ -377,6 +377,8 @@ export interface ClientGameState {
   self: PrivatePlayerState;
   opponents: PublicPlayerState[];
   totalSpaces: number;
+  /** Track ID for client-side rendering. */
+  trackId: string;
   /** Map from player ID to display info (name + car color). */
   playerInfo: Record<string, ClientPlayerInfo>;
 }
