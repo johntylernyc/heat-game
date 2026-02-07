@@ -14,6 +14,8 @@ import type {
   RaceStatus,
 } from '../types.js';
 
+export type PhaseType = 'simultaneous' | 'sequential' | 'sequential-auto' | 'automatic';
+
 // -- Room --
 
 export type RoomStatus = 'waiting' | 'playing' | 'finished' | 'closed';
@@ -310,6 +312,7 @@ export interface PrivatePlayerState {
 export interface ClientGameState {
   round: number;
   phase: GamePhase;
+  phaseType: PhaseType;
   activePlayerIndex: number;
   turnOrder: number[];
   lapTarget: number;

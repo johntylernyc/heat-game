@@ -10,6 +10,7 @@ describe('PhaseIndicator', () => {
     render(
       <PhaseIndicator
         phase="gear-shift"
+        phaseType="simultaneous"
         gear={2}
         isActivePlayer={true}
         raceStatus="racing"
@@ -26,6 +27,7 @@ describe('PhaseIndicator', () => {
     render(
       <PhaseIndicator
         phase="play-cards"
+        phaseType="simultaneous"
         gear={3}
         isActivePlayer={true}
         raceStatus="racing"
@@ -40,6 +42,7 @@ describe('PhaseIndicator', () => {
     render(
       <PhaseIndicator
         phase="play-cards"
+        phaseType="simultaneous"
         gear={1}
         isActivePlayer={true}
         raceStatus="racing"
@@ -54,6 +57,7 @@ describe('PhaseIndicator', () => {
     render(
       <PhaseIndicator
         phase="react"
+        phaseType="sequential"
         gear={2}
         isActivePlayer={false}
         raceStatus="racing"
@@ -70,6 +74,7 @@ describe('PhaseIndicator', () => {
     render(
       <PhaseIndicator
         phase="react"
+        phaseType="sequential"
         gear={2}
         isActivePlayer={true}
         raceStatus="racing"
@@ -86,6 +91,7 @@ describe('PhaseIndicator', () => {
     render(
       <PhaseIndicator
         phase="gear-shift"
+        phaseType="simultaneous"
         gear={2}
         isActivePlayer={true}
         raceStatus="racing"
@@ -100,6 +106,7 @@ describe('PhaseIndicator', () => {
     render(
       <PhaseIndicator
         phase="gear-shift"
+        phaseType="simultaneous"
         gear={2}
         isActivePlayer={true}
         raceStatus="final-round"
@@ -114,6 +121,7 @@ describe('PhaseIndicator', () => {
     render(
       <PhaseIndicator
         phase="reveal-and-move"
+        phaseType="sequential-auto"
         gear={3}
         isActivePlayer={true}
         raceStatus="racing"
@@ -129,6 +137,7 @@ describe('PhaseIndicator', () => {
     render(
       <PhaseIndicator
         phase="gear-shift"
+        phaseType="simultaneous"
         gear={2}
         isActivePlayer={true}
         raceStatus="racing"
@@ -143,6 +152,7 @@ describe('PhaseIndicator', () => {
     render(
       <PhaseIndicator
         phase="finished"
+        phaseType="automatic"
         gear={2}
         isActivePlayer={true}
         raceStatus="finished"

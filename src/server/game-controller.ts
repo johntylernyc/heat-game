@@ -41,43 +41,13 @@ import type {
   ClientGameState,
   PlayerStanding,
 } from './types.js';
-import { partitionState, computeStandings } from './state-partition.js';
+import { partitionState, computeStandings, getPhaseType } from './state-partition.js';
 import {
   getPlayerIndex,
   isPlayerConnected,
   setRoomStatus,
 } from './room.js';
 import { isPlayableCard } from '../cards.js';
-
-/**
- * Simultaneous phases where we collect actions from ALL players before advancing.
- */
-const SIMULTANEOUS_PHASES: GamePhase[] = ['gear-shift', 'play-cards', 'discard'];
-
-/**
- * Sequential phases where one player acts at a time (requires player input).
- */
-const SEQUENTIAL_INPUT_PHASES: GamePhase[] = ['react', 'slipstream'];
-
-/**
- * Sequential phases that auto-process for each player (no input needed).
- */
-const SEQUENTIAL_AUTO_PHASES: GamePhase[] = ['reveal-and-move', 'check-corner'];
-
-/**
- * Automatic phases that don't require player input.
- */
-const AUTOMATIC_PHASES: GamePhase[] = ['adrenaline', 'replenish'];
-
-export type PhaseType = 'simultaneous' | 'sequential' | 'sequential-auto' | 'automatic';
-
-export function getPhaseType(phase: GamePhase): PhaseType {
-  if (SIMULTANEOUS_PHASES.includes(phase)) return 'simultaneous';
-  if (SEQUENTIAL_INPUT_PHASES.includes(phase)) return 'sequential';
-  if (SEQUENTIAL_AUTO_PHASES.includes(phase)) return 'sequential-auto';
-  if (AUTOMATIC_PHASES.includes(phase)) return 'automatic';
-  return 'automatic'; // setup, finished
-}
 
 // -- Connection Registry --
 

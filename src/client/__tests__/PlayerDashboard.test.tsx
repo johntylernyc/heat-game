@@ -40,6 +40,7 @@ function makeGameState(
   return {
     round: 1,
     phase: 'gear-shift',
+    phaseType: 'simultaneous' as const,
     activePlayerIndex: 0,
     turnOrder: [0, 1],
     lapTarget: 2,

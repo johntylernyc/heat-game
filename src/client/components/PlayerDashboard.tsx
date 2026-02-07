@@ -77,7 +77,7 @@ export function PlayerDashboard({
   onReactDone,
   onDiscard,
 }: PlayerDashboardProps) {
-  const { self, phase, round, raceStatus, activePlayerIndex, playerIndex } = gameState;
+  const { self, phase, phaseType, round, raceStatus, activePlayerIndex, playerIndex } = gameState;
   const isActivePlayer = activePlayerIndex === playerIndex;
   const phaseGroup = getPhaseGroup(phase);
 
@@ -155,6 +155,7 @@ export function PlayerDashboard({
       {/* Phase Indicator */}
       <PhaseIndicator
         phase={phase}
+        phaseType={phaseType}
         gear={self.gear}
         isActivePlayer={isActivePlayer}
         raceStatus={raceStatus}

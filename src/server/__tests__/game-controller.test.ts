@@ -6,9 +6,9 @@ import {
   handleGameAction,
   handleReconnection,
   handleDisconnection,
-  getPhaseType,
   isStaleAction,
 } from '../game-controller.js';
+import { getPhaseType } from '../state-partition.js';
 import { createRoom, joinRoom, disconnectPlayer, reconnectPlayer } from '../room.js';
 
 const defaultConfig: RoomConfig = {
