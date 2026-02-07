@@ -14,6 +14,9 @@ import type {
   RaceStatus,
 } from '../types.js';
 
+/** A card in the player's hand annotated with playability. */
+export type HandCard = Card & { playable: boolean };
+
 // -- Room --
 
 export type RoomStatus = 'waiting' | 'playing' | 'finished' | 'closed';
@@ -299,7 +302,7 @@ export interface PrivatePlayerState {
   position: number;
   lapCount: number;
   speed: number;
-  hand: Card[];
+  hand: HandCard[];
   drawPileCount: number;
   discardPile: Card[];
   engineZone: Card[];

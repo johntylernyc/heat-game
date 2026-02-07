@@ -8,6 +8,7 @@
  */
 
 import type { GameState, PlayerState } from '../types.js';
+import { isPlayableCard } from '../cards.js';
 import type {
   ClientGameState,
   PublicPlayerState,
@@ -61,7 +62,7 @@ export function buildPrivateState(player: PlayerState): PrivatePlayerState {
     position: player.position,
     lapCount: player.lapCount,
     speed: player.speed,
-    hand: [...player.hand],
+    hand: player.hand.map(card => ({ ...card, playable: isPlayableCard(card) })),
     drawPileCount: player.drawPile.length,
     discardPile: [...player.discardPile],
     engineZone: [...player.engineZone],

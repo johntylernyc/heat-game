@@ -4,8 +4,8 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 
 afterEach(cleanup);
 import { PlayerDashboard } from '../components/PlayerDashboard.js';
-import type { ClientGameState, PrivatePlayerState } from '../../server/types.js';
-import type { Card, Gear } from '../../types.js';
+import type { ClientGameState, PrivatePlayerState, HandCard } from '../../server/types.js';
+import type { Gear } from '../../types.js';
 import type { GearTarget } from '../components/GearSelector.js';
 
 function makePrivateState(overrides: Partial<PrivatePlayerState> = {}): PrivatePlayerState {
@@ -16,14 +16,14 @@ function makePrivateState(overrides: Partial<PrivatePlayerState> = {}): PrivateP
     lapCount: 0,
     speed: 0,
     hand: [
-      { type: 'speed', value: 1 },
-      { type: 'speed', value: 3 },
-      { type: 'speed', value: 4 },
-      { type: 'heat' },
-      { type: 'stress' },
-      { type: 'upgrade', subtype: 'speed-5' },
-      { type: 'speed', value: 2 },
-    ] as Card[],
+      { type: 'speed', value: 1, playable: true },
+      { type: 'speed', value: 3, playable: true },
+      { type: 'speed', value: 4, playable: true },
+      { type: 'heat', playable: false },
+      { type: 'stress', playable: true },
+      { type: 'upgrade', subtype: 'speed-5', playable: true },
+      { type: 'speed', value: 2, playable: true },
+    ] as HandCard[],
     drawPileCount: 8,
     discardPile: [],
     engineZone: Array.from({ length: 6 }, () => ({ type: 'heat' as const })),

@@ -215,6 +215,7 @@ export type {
   ClientGameState,
   PublicPlayerState,
   PrivatePlayerState,
+  HandCard,
   PlayerStanding,
   PhaseType,
   ConnectionRegistry,

@@ -50,11 +50,29 @@ describe('buildPrivateState', () => {
     expect(priv).not.toHaveProperty('drawPile');
   });
 
+  it('annotates hand cards with playable flag', () => {
+    const state = makeGameState();
+    const priv = buildPrivateState(state.players[0]);
+
+    for (const card of priv.hand) {
+      expect(card).toHaveProperty('playable');
+      if (card.type === 'heat') {
+        expect(card.playable).toBe(false);
+      }
+      if (card.type === 'speed') {
+        expect(card.playable).toBe(true);
+      }
+      if (card.type === 'stress') {
+        expect(card.playable).toBe(true);
+      }
+    }
+  });
+
   it('returns copies, not references to original arrays', () => {
     const state = makeGameState();
     const priv = buildPrivateState(state.players[0]);
 
-    priv.hand.push({ type: 'heat' });
+    priv.hand.push({ type: 'heat', playable: false });
     expect(state.players[0].hand).toHaveLength(7);
   });
 });

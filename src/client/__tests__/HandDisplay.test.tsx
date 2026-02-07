@@ -4,15 +4,15 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 
 afterEach(cleanup);
 import { HandDisplay } from '../components/HandDisplay.js';
-import type { Card } from '../../types.js';
+import type { HandCard } from '../../server/types.js';
 
 describe('HandDisplay', () => {
-  const hand: Card[] = [
-    { type: 'speed', value: 1 },
-    { type: 'speed', value: 3 },
-    { type: 'heat' },
-    { type: 'stress' },
-    { type: 'upgrade', subtype: 'speed-5' },
+  const hand: HandCard[] = [
+    { type: 'speed', value: 1, playable: true },
+    { type: 'speed', value: 3, playable: true },
+    { type: 'heat', playable: false },
+    { type: 'stress', playable: true },
+    { type: 'upgrade', subtype: 'speed-5', playable: true },
   ];
 
   it('renders all cards in hand', () => {
