@@ -682,6 +682,11 @@ function validateSimultaneousActionContent(
           throw new Error(`Card of type '${player.hand[idx].type}' cannot be played`);
         }
       }
+
+      // Check for duplicate indices
+      if (new Set(cardIndices).size !== cardIndices.length) {
+        throw new Error('Duplicate card indices');
+      }
       break;
     }
 
@@ -694,6 +699,10 @@ function validateSimultaneousActionContent(
         if (!isPlayableCard(player.hand[idx])) {
           throw new Error(`Can only discard playable cards`);
         }
+      }
+
+      if (new Set(cardIndices).size !== cardIndices.length) {
+        throw new Error('Duplicate card indices');
       }
       break;
     }
