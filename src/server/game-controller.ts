@@ -49,6 +49,7 @@ import {
 } from './room.js';
 import { isPlayableCard } from '../cards.js';
 import { shiftGear } from '../gear.js';
+import { baseGameTracks } from '../track/tracks/index.js';
 
 // -- Connection Registry --
 
@@ -73,13 +74,17 @@ export function startGame(
   const seed = room.config.seed ?? Date.now();
   room.rng = createRng(seed);
 
+  const track = baseGameTracks[room.config.trackId];
+
   const state = initGame({
     playerIds: room.playerIds,
     lapTarget: room.config.lapCount,
     seed,
     mode: room.config.mode,
-    // Track corners/totalSpaces will be set when track integration is added.
-    // For now use defaults from engine.
+    trackId: track.id,
+    totalSpaces: track.totalSpaces,
+    startFinishLine: track.startFinishLine,
+    corners: track.corners,
   });
 
   room.gameState = state;
@@ -222,15 +227,20 @@ function executeSimultaneousPhase(
         executeDiscard(room, registry);
         break;
     }
-  } catch (err) {
+  } catch (_err) {
     // Batch processing failed (e.g., invalid gear shift slipped through).
     // Clear stale actions and restart the phase so the turn timer can
     // recover and players can resubmit. Without this, pendingActions
     // retains the invalid entries, fillDefaultActions skips those players,
     // and the game permanently soft-locks.
+    //
+    // We intentionally swallow the error after recovery. Re-throwing would
+    // propagate uncaught through handleTimeout's setTimeout callback (or
+    // handleDisconnection), crashing the entire WS server (ht-h9i4).
+    // The phase restart is sufficient recovery — players get a fresh
+    // phase-changed broadcast and can resubmit.
     room.pendingActions.clear();
     beginPhase(room, registry);
-    throw err;
   }
 }
 
@@ -494,12 +504,19 @@ function handleTimeout(room: Room, registry: ConnectionRegistry): void {
   const state = room.gameState;
   const phaseType = getPhaseType(state.phase);
 
-  if (phaseType === 'simultaneous') {
-    // Fill defaults for players who haven't acted, then execute
-    executeSimultaneousPhase(room, registry);
-  } else if (phaseType === 'sequential') {
-    // Auto-play the active player with default action
-    autoPlayDisconnected(room, state.activePlayerIndex, registry);
+  try {
+    if (phaseType === 'simultaneous') {
+      // Fill defaults for players who haven't acted, then execute
+      executeSimultaneousPhase(room, registry);
+    } else if (phaseType === 'sequential') {
+      // Auto-play the active player with default action
+      autoPlayDisconnected(room, state.activePlayerIndex, registry);
+    }
+  } catch (_err) {
+    // Defense-in-depth: never let errors escape setTimeout callbacks.
+    // executeSimultaneousPhase already handles its own recovery (clear +
+    // restart phase), so reaching here means something truly unexpected.
+    // Swallow to protect the WS server process (ht-h9i4).
   }
 }
 
@@ -633,6 +650,59 @@ function handleGameOver(room: Room, registry: ConnectionRegistry): void {
     type: 'game-over',
     standings,
   });
+
+  // Send per-player result messages for profile stats tracking
+  if (state.mode === 'qualifying') {
+    // Single player — compute lap times from lapRounds
+    const player = state.players[0];
+    const lapTimes = player.lapRounds.map((r, i) => r - (i > 0 ? player.lapRounds[i - 1] : 0));
+    const bestLap = lapTimes.length > 0 ? Math.min(...lapTimes) : 0;
+    const totalTime = player.lapRounds.length > 0 ? player.lapRounds[player.lapRounds.length - 1] : 0;
+
+    registry.sendTo(room.playerIds[0], {
+      type: 'qualifying-result',
+      trackId: state.trackId,
+      lapCount: state.lapTarget,
+      lapTimes,
+      bestLap,
+      totalTime,
+    });
+  } else {
+    // Multiplayer race — send individual result to each player
+    const points = computeRacePoints(standings.length);
+    const standingInfo = standings.map((s) => {
+      const info = room.playerInfo.get(s.playerId);
+      return {
+        profileId: s.playerId,
+        displayName: info?.displayName ?? s.playerId,
+        position: s.rank,
+      };
+    });
+
+    for (let i = 0; i < room.playerIds.length; i++) {
+      const playerId = room.playerIds[i];
+      const rank = standings.find((s) => s.playerId === playerId)?.rank ?? standings.length;
+
+      registry.sendTo(playerId, {
+        type: 'race-result',
+        trackId: state.trackId,
+        lapCount: state.lapTarget,
+        position: rank,
+        totalPlayers: standings.length,
+        points: points[rank - 1] ?? 0,
+        standings: standingInfo,
+        spinouts: 0,  // TODO: track per-player spinouts in game state
+        boostsUsed: 0, // TODO: track per-player boosts in game state
+        heatPaid: 0,   // TODO: track per-player heat paid in game state
+      });
+    }
+  }
+}
+
+/** Championship-style points: 10, 6, 4, 3, 2, 1 for positions 1-6. */
+function computeRacePoints(totalPlayers: number): number[] {
+  const table = [10, 6, 4, 3, 2, 1];
+  return Array.from({ length: totalPlayers }, (_, i) => table[i] ?? 0);
 }
 
 // -- Validation --

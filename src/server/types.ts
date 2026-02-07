@@ -181,6 +181,10 @@ export interface DiscardMessage {
   cardIndices: number[];
 }
 
+export interface ClientPingMessage {
+  type: 'ping';
+}
+
 export type ClientMessage =
   | CreateRoomMessage
   | JoinRoomMessage
@@ -197,7 +201,8 @@ export type ClientMessage =
   | ReactBoostMessage
   | ReactDoneMessage
   | SlipstreamMessage
-  | DiscardMessage;
+  | DiscardMessage
+  | ClientPingMessage;
 
 // -- Server → Client Messages --
 
@@ -267,6 +272,28 @@ export interface GameOverMessage {
   standings: PlayerStanding[];
 }
 
+export interface QualifyingResultMessage {
+  type: 'qualifying-result';
+  trackId: string;
+  lapCount: number;
+  lapTimes: number[];
+  bestLap: number;
+  totalTime: number;
+}
+
+export interface RaceResultMessage {
+  type: 'race-result';
+  trackId: string;
+  lapCount: number;
+  position: number;
+  totalPlayers: number;
+  points: number;
+  standings: { profileId: string; displayName: string; position: number }[];
+  spinouts: number;
+  boostsUsed: number;
+  heatPaid: number;
+}
+
 export interface ReconnectAvailableMessage {
   type: 'reconnect-available';
   roomCode: string;
@@ -276,6 +303,10 @@ export interface ReconnectAvailableMessage {
 export interface ErrorMessage {
   type: 'error';
   message: string;
+}
+
+export interface ServerPongMessage {
+  type: 'pong';
 }
 
 export type ServerMessage =
@@ -290,8 +321,11 @@ export type ServerMessage =
   | PlayerDisconnectedMessage
   | PlayerReconnectedMessage
   | GameOverMessage
+  | QualifyingResultMessage
+  | RaceResultMessage
   | ReconnectAvailableMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | ServerPongMessage;
 
 // -- State Partitioning --
 

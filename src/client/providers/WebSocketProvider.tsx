@@ -4,6 +4,7 @@ import { useSession } from '../hooks/useSession.js';
 import { useWebSocket, type ConnectionStatus } from '../hooks/useWebSocket.js';
 import { useGameState, type GameStoreState } from '../hooks/useGameState.js';
 import type { ServerMessage, ClientMessage } from '../../server/types.js';
+import { loadProfile, recordQualifyingResult, recordRaceResult } from '../profile.js';
 
 interface WebSocketContextValue {
   status: ConnectionStatus;
@@ -73,6 +74,19 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           if (activeRoom) {
             navigateRef.current(`/game/${activeRoom}`);
           }
+        }
+        break;
+
+      case 'qualifying-result':
+        // Record to profile stats if profile exists
+        if (loadProfile()) {
+          recordQualifyingResult(message);
+        }
+        break;
+
+      case 'race-result':
+        if (loadProfile()) {
+          recordRaceResult(message);
         }
         break;
 

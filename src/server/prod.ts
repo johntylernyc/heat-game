@@ -63,6 +63,8 @@ interface Session {
 
 interface WsConnection extends Connection {
   ws: import('ws').WebSocket;
+  /** Set to true on pong receipt; cleared before each ping. */
+  isAlive: boolean;
 }
 
 const WAITING_ROOM_GRACE_PERIOD_MS = 30_000;
@@ -159,6 +161,7 @@ wss.on('connection', (ws) => {
     playerId,
     roomId: null,
     ws,
+    isAlive: true,
     send(message: ServerMessage) {
       if (ws.readyState === 1) ws.send(JSON.stringify(message));
     },
@@ -170,9 +173,19 @@ wss.on('connection', (ws) => {
 
   conn.send({ type: 'session-created', sessionToken, playerId });
 
+  // Mark connection alive when native pong received
+  ws.on('pong', () => {
+    conn.isAlive = true;
+  });
+
   ws.on('message', (data) => {
     try {
       const message = JSON.parse(data.toString()) as ClientMessage;
+      // Application-level ping: respond immediately
+      if (message.type === 'ping') {
+        conn.send({ type: 'pong' });
+        return;
+      }
       handleMessage(conn, message);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Invalid message';
@@ -340,6 +353,21 @@ function broadcastLobbyState(room: Room): void {
   registry.broadcast(room, { type: 'lobby-state', lobby });
 }
 
+// -- Heartbeat --
+
+const HEARTBEAT_INTERVAL_MS = 30_000;
+const heartbeatInterval = setInterval(() => {
+  for (const conn of state.connections.values()) {
+    if (!conn.isAlive) {
+      // No pong since last ping — terminate the zombie connection
+      conn.ws.terminate();
+      continue;
+    }
+    conn.isAlive = false;
+    conn.ws.ping();
+  }
+}, HEARTBEAT_INTERVAL_MS);
+
 // -- Start --
 
 httpServer.listen(port, () => {
@@ -349,6 +377,7 @@ httpServer.listen(port, () => {
 
 function shutdown() {
   console.log('\nShutting down...');
+  clearInterval(heartbeatInterval);
   for (const timer of state.roomCleanupTimers.values()) clearTimeout(timer);
   state.roomCleanupTimers.clear();
   for (const room of state.rooms.values()) cleanupRoom(room);

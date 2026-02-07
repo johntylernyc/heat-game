@@ -3,9 +3,10 @@ import { useSession } from '../hooks/useSession.js';
 import { useWebSocketContext } from '../providers/WebSocketProvider.js';
 import { PlayerDashboard } from '../components/PlayerDashboard.js';
 import { OpponentPanel } from '../components/OpponentPanel.js';
-import type { ServerMessage, ClientGameState } from '../../server/types.js';
+import type { ClientGameState, QualifyingResultMessage, RaceResultMessage } from '../../server/types.js';
 import type { Gear } from '../../types.js';
 import { isSlipstreamEligible } from '../../engine.js';
+import { loadStats } from '../profile.js';
 
 const styles = {
   container: {
@@ -167,6 +168,32 @@ const styles = {
     fontSize: '1.1rem',
     color: rank === 1 ? '#fbbf24' : rank === 2 ? '#94a3b8' : rank === 3 ? '#cd7f32' : '#e2e8f0',
   }),
+  newPb: {
+    color: '#fbbf24',
+    fontWeight: 'bold' as const,
+    fontSize: '1rem',
+    marginTop: '0.5rem',
+  },
+  pbComparison: {
+    color: '#94a3b8',
+    fontSize: '0.85rem',
+    marginTop: '0.25rem',
+  },
+  raceStats: {
+    background: '#16213e',
+    borderRadius: '12px',
+    padding: '1rem 1.5rem',
+    width: '100%',
+    maxWidth: '400px',
+    margin: '1rem auto',
+  },
+  raceStatsRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '0.35rem 0',
+    color: '#94a3b8',
+    fontSize: '0.85rem',
+  },
 };
 
 export function Game() {
@@ -181,6 +208,8 @@ export function Game() {
   const standings = gameState.standings;
   const lobbyPlayers = gameState.lobby?.players;
   const isQualifying = gs?.mode === 'qualifying';
+  const qualifyingResult = gameState.qualifyingResult;
+  const raceResult = gameState.raceResult;
 
   const handleBackToHome = () => {
     setActiveRoom(null);
@@ -201,26 +230,31 @@ export function Game() {
             {isQualifying ? 'Qualifying Complete!' : 'Race Complete!'}
           </p>
           {isQualifying && gs ? (
-            <QualifyingResults gameState={gs} />
+            <QualifyingResults gameState={gs} result={qualifyingResult} />
           ) : standings && standings.length > 0 ? (
-            <table style={styles.standingsTable}>
-              <thead>
-                <tr>
-                  <th style={styles.standingsHeader}>Pos</th>
-                  <th style={styles.standingsHeader}>Driver</th>
-                  <th style={styles.standingsHeader}>Laps</th>
-                </tr>
-              </thead>
-              <tbody>
-                {standings.map((s) => (
-                  <tr key={s.playerId} style={styles.standingsRow(s.rank === 1)}>
-                    <td style={styles.rankCell(s.rank)}>{s.rank}</td>
-                    <td style={styles.standingsCell}>{displayName(s.playerId)}</td>
-                    <td style={styles.standingsCell}>{s.lapCount}</td>
+            <>
+              <table style={styles.standingsTable}>
+                <thead>
+                  <tr>
+                    <th style={styles.standingsHeader}>Pos</th>
+                    <th style={styles.standingsHeader}>Driver</th>
+                    <th style={styles.standingsHeader}>Laps</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {standings.map((s) => (
+                    <tr key={s.playerId} style={styles.standingsRow(s.rank === 1)}>
+                      <td style={styles.rankCell(s.rank)}>{s.rank}</td>
+                      <td style={styles.standingsCell}>{displayName(s.playerId)}</td>
+                      <td style={styles.standingsCell}>{s.lapCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {raceResult && (
+                <RaceResultSummary result={raceResult} />
+              )}
+            </>
           ) : (
             <p style={{ color: '#aaa', marginBottom: '1rem' }}>
               No standings data available.
@@ -321,13 +355,18 @@ export function Game() {
   );
 }
 
-/** Lap timer panel for qualifying mode. */
+/** Lap timer panel for qualifying mode — shows personal best from profile. */
 function LapTimer({ gameState: gs }: { gameState: ClientGameState }) {
   const { self, lapTarget, round } = gs;
   const currentLapRounds = round - (self.lapRounds.length > 0 ? self.lapRounds[self.lapRounds.length - 1] : 0);
   const bestLap = self.lapRounds.length > 0
     ? Math.min(...self.lapRounds.map((r, i) => r - (i > 0 ? self.lapRounds[i - 1] : 0)))
     : null;
+
+  // Load personal best from profile for comparison
+  const stats = loadStats();
+  const trackId = (gs as ClientGameState & { trackId?: string }).trackId;
+  const personalBest = trackId ? stats.bestLapTimes[trackId] : undefined;
 
   return (
     <div style={styles.lapTimer}>
@@ -349,22 +388,48 @@ function LapTimer({ gameState: gs }: { gameState: ClientGameState }) {
           </div>
         </div>
       )}
+      {personalBest !== undefined && (
+        <div>
+          <div style={styles.lapTimerLabel}>PB</div>
+          <div style={{ ...styles.lapTimerValue, color: '#fbbf24' }}>
+            {personalBest} rnd{personalBest !== 1 ? 's' : ''}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-/** Qualifying results with per-lap breakdown. */
-function QualifyingResults({ gameState: gs }: { gameState: ClientGameState }) {
+/** Qualifying results with per-lap breakdown and PB comparison. */
+function QualifyingResults({ gameState: gs, result }: { gameState: ClientGameState; result: QualifyingResultMessage | null }) {
   const { self } = gs;
   const lapTimes = self.lapRounds.map((r, i) => r - (i > 0 ? self.lapRounds[i - 1] : 0));
   const bestIdx = lapTimes.length > 0 ? lapTimes.indexOf(Math.min(...lapTimes)) : -1;
   const totalRounds = self.lapRounds.length > 0 ? self.lapRounds[self.lapRounds.length - 1] : 0;
+
+  // Check personal best comparison
+  const stats = loadStats();
+  const trackId = result?.trackId;
+  const currentBestLap = lapTimes.length > 0 ? Math.min(...lapTimes) : null;
+  const previousBestLap = trackId ? stats.bestLapTimes[trackId] : undefined;
+
+  // If the result was already recorded, the current stats reflect the updated value.
+  // A new PB means the stats best equals the current best (since it was just recorded).
+  const isNewPB = currentBestLap !== null && previousBestLap !== undefined && currentBestLap <= previousBestLap;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <p style={{ color: '#aaa', marginBottom: '0.5rem' }}>
         {self.lapCount} lap{self.lapCount !== 1 ? 's' : ''} in {totalRounds} round{totalRounds !== 1 ? 's' : ''}
       </p>
+      {isNewPB && (
+        <p style={styles.newPb}>New Personal Best!</p>
+      )}
+      {previousBestLap !== undefined && !isNewPB && currentBestLap !== null && (
+        <p style={styles.pbComparison}>
+          {currentBestLap - previousBestLap} round{Math.abs(currentBestLap - previousBestLap) !== 1 ? 's' : ''} off your best
+        </p>
+      )}
       {lapTimes.length > 0 && (
         <div style={styles.lapBreakdown}>
           <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -381,6 +446,22 @@ function QualifyingResults({ gameState: gs }: { gameState: ClientGameState }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Race result summary showing points earned. */
+function RaceResultSummary({ result }: { result: RaceResultMessage }) {
+  return (
+    <div style={styles.raceStats}>
+      <div style={styles.raceStatsRow}>
+        <span>Points earned</span>
+        <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>+{result.points}</span>
+      </div>
+      <div style={styles.raceStatsRow}>
+        <span>Your position</span>
+        <span>P{result.position} / {result.totalPlayers}</span>
+      </div>
     </div>
   );
 }
