@@ -267,7 +267,7 @@ describe('PlayerDashboard', () => {
     expect(screen.getByTestId('slipstream-prompt')).toBeTruthy();
   });
 
-  it('hides slipstream when not eligible', () => {
+  it('shows slipstream decline-only prompt when not eligible', () => {
     render(
       <PlayerDashboard
         gameState={makeGameState({ phase: 'slipstream', activePlayerIndex: 0 })}
@@ -276,7 +276,9 @@ describe('PlayerDashboard', () => {
         {...defaultCallbacks}
       />,
     );
-    expect(screen.queryByTestId('slipstream-prompt')).toBeNull();
+    expect(screen.getByTestId('slipstream-prompt')).toBeTruthy();
+    expect(screen.queryByTestId('slipstream-accept')).toBeNull();
+    expect(screen.getByTestId('slipstream-decline')).toBeTruthy();
   });
 
   it('shows discard confirm during discard phase', () => {
