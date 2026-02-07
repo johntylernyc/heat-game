@@ -483,6 +483,54 @@ describe('WebSocket server', () => {
     ws2new.close();
   });
 
+  it('handles duplicate resume-session without destroying the session', async () => {
+    server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
+    const { ws: ws1, sessionToken, playerId } = await connectWithSession(TEST_PORT);
+
+    // Create a room so we can verify full reconnection later
+    const createPromise = waitForMessageOfType(ws1, 'room-created');
+    send(ws1, { type: 'create-room', trackId: 'usa', lapCount: 2, maxPlayers: 4, displayName: 'Alice' });
+    await createPromise;
+
+    // Disconnect
+    ws1.close();
+    await delay(50);
+
+    // Reconnect with new WebSocket and resume
+    const ws2 = await connect(TEST_PORT);
+    const resume1 = waitForMessageOfType(ws2, 'session-created');
+    send(ws2, { type: 'resume-session', sessionToken });
+    const first = await resume1;
+    expect(first.type).toBe('session-created');
+    if (first.type === 'session-created') {
+      expect(first.playerId).toBe(playerId);
+    }
+
+    // Send duplicate resume-session on the SAME connection (network retry / race)
+    const resume2 = waitForMessageOfType(ws2, 'session-created');
+    send(ws2, { type: 'resume-session', sessionToken });
+    const second = await resume2;
+    expect(second.type).toBe('session-created');
+    if (second.type === 'session-created') {
+      expect(second.playerId).toBe(playerId);
+    }
+
+    // Session must still be valid: disconnect and resume again on a NEW connection
+    ws2.close();
+    await delay(50);
+
+    const ws3 = await connect(TEST_PORT);
+    const resume3 = waitForMessageOfType(ws3, 'session-created');
+    send(ws3, { type: 'resume-session', sessionToken });
+    const third = await resume3;
+    expect(third.type).toBe('session-created');
+    if (third.type === 'session-created') {
+      expect(third.playerId).toBe(playerId);
+    }
+
+    ws3.close();
+  });
+
   it('supports session resumption', async () => {
     server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
     const { ws: ws1, sessionToken, playerId } = await connectWithSession(TEST_PORT);

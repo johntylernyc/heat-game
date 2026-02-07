@@ -341,6 +341,18 @@ function handleResumeSession(
 
   const oldPlayerId = session.playerId;
 
+  // Duplicate resume on the same connection (e.g. network retry, client race):
+  // conn.playerId was already remapped to oldPlayerId by the first resume.
+  // Re-running the cleanup below would delete the *active* session, so bail out.
+  if (conn.playerId === oldPlayerId) {
+    conn.send({
+      type: 'session-created',
+      sessionToken: message.sessionToken,
+      playerId: oldPlayerId,
+    });
+    return;
+  }
+
   // If the old player connection is still tracked, clean it up
   const oldConn = state.connections.get(oldPlayerId);
   if (oldConn && oldConn !== conn) {
