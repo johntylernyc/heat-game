@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
+import { useRef, useEffect } from 'react';
 import { useSession } from '../hooks/useSession.js';
 import { useWebSocketContext } from '../providers/WebSocketProvider.js';
 import { PlayerDashboard } from '../components/PlayerDashboard.js';
@@ -7,6 +8,9 @@ import type { ClientGameState, QualifyingResultMessage, RaceResultMessage } from
 import type { Gear } from '../../types.js';
 import { isSlipstreamEligible } from '../../engine.js';
 import { loadStats } from '../profile.js';
+import { createGameBoard, buildCarStates, buildStandings } from '../board.js';
+import type { GameBoard, BoardState } from '../board.js';
+import { baseGameTracks } from '../../track/tracks/index.js';
 
 const styles = {
   container: {
@@ -45,18 +49,15 @@ const styles = {
     justifyContent: 'center',
     padding: '1rem',
   },
-  boardPlaceholder: {
+  boardContainer: {
     width: '100%',
     maxWidth: '900px',
-    height: '300px',
-    background: '#16213e',
+    height: '400px',
+    background: '#1a1a2e',
     borderRadius: '12px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#555',
-    fontSize: '1.2rem',
+    overflow: 'hidden',
     marginBottom: '1rem',
+    position: 'relative' as const,
   },
   dashboardArea: {
     width: '100%',
@@ -316,10 +317,8 @@ export function Game() {
         {/* Qualifying Lap Timer */}
         {isQualifying && <LapTimer gameState={gs} />}
 
-        {/* Board placeholder — future canvas integration */}
-        <div style={styles.boardPlaceholder}>
-          Track board (canvas rendering goes here)
-        </div>
+        {/* Live canvas game board */}
+        <GameBoardCanvas gameState={gs} />
 
         {/* Opponent Info */}
         <div style={styles.dashboardArea}>
@@ -355,6 +354,59 @@ export function Game() {
   );
 }
 
+/** Canvas game board: mounts the rendering system and syncs with game state. */
+function GameBoardCanvas({ gameState: gs }: { gameState: ClientGameState }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const boardRef = useRef<GameBoard | null>(null);
+
+  // Create/destroy board when track changes
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const trackData = baseGameTracks[gs.trackId];
+    if (!trackData) return;
+
+    const board = createGameBoard(container, trackData);
+    boardRef.current = board;
+
+    return () => {
+      board.destroy();
+      boardRef.current = null;
+    };
+  }, [gs.trackId]);
+
+  // Update board state on every game state change
+  useEffect(() => {
+    const board = boardRef.current;
+    if (!board) return;
+
+    const cars = buildCarStates(
+      gs.self,
+      gs.opponents,
+      gs.playerIndex,
+      1 + gs.opponents.length,
+    );
+    const standings = buildStandings(cars);
+
+    const state: BoardState = {
+      cars,
+      phase: gs.phase,
+      round: gs.round,
+      activePlayerIndex: gs.activePlayerIndex,
+      turnOrder: gs.turnOrder,
+      lapTarget: gs.lapTarget,
+      standings,
+      myPlayerIndex: gs.playerIndex,
+      slipstream: null,
+    };
+
+    board.update(state);
+  }, [gs]);
+
+  return <div ref={containerRef} style={styles.boardContainer} />;
+}
+
 /** Lap timer panel for qualifying mode — shows personal best from profile. */
 function LapTimer({ gameState: gs }: { gameState: ClientGameState }) {
   const { self, lapTarget, round } = gs;
@@ -365,8 +417,7 @@ function LapTimer({ gameState: gs }: { gameState: ClientGameState }) {
 
   // Load personal best from profile for comparison
   const stats = loadStats();
-  const trackId = (gs as ClientGameState & { trackId?: string }).trackId;
-  const personalBest = trackId ? stats.bestLapTimes[trackId] : undefined;
+  const personalBest = gs.trackId ? stats.bestLapTimes[gs.trackId] : undefined;
 
   return (
     <div style={styles.lapTimer}>
