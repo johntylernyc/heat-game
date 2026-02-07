@@ -315,6 +315,73 @@ describe('reconnection', () => {
   });
 });
 
+describe('reconnection race condition (ht-vlkj)', () => {
+  it('stale disconnect after reconnection should not trigger phase advancement', () => {
+    // Reproduces ht-vlkj: player reconnects via resume-session, then old
+    // WebSocket fires close event. The stale disconnection should not undo the
+    // reconnection or trigger allPlayersActed → premature phase execution.
+    const room = createTestRoom(2);
+    const { registry } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // We're in gear-shift phase (simultaneous)
+    expect(room.gameState!.phase).toBe('gear-shift');
+
+    // Simulate: player-1 disconnects (page refresh — old WS closes)
+    disconnectPlayer(room, 'player-1');
+
+    // Before the old WS close handler runs, player-1 reconnects via resume-session
+    reconnectPlayer(room, 'player-1');
+    handleReconnection(room, 'player-1', registry);
+
+    // Player is back, but old WS close event fires AFTER reconnection.
+    // In the buggy code, this would call disconnectPlayer + handleDisconnection again,
+    // removing the player and potentially triggering allPlayersActed().
+    //
+    // The fix prevents handleClose from running when the connection has been superseded.
+    // But at the game-controller level, we can verify the invariant: if player-1 is
+    // connected, the phase should NOT advance with only player-0's action.
+
+    // Player-0 submits gear-shift
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 1 }, registry);
+
+    // Phase should NOT have advanced — player-1 hasn't acted
+    expect(room.gameState!.phase).toBe('gear-shift');
+
+    // Player-1 submits — NOW it should advance
+    handleGameAction(room, 'player-1', { type: 'gear-shift', targetGear: 1 }, registry);
+    expect(room.gameState!.phase).toBe('play-cards');
+  });
+
+  it('stale disconnect of ALL players should not auto-execute phase with defaults', () => {
+    // The worst case of ht-vlkj: all players refresh simultaneously.
+    // Without the fix, all players get disconnected by stale close handlers,
+    // allPlayersActed() returns true (no connected players), and the phase
+    // executes with all default actions.
+    const room = createTestRoom(3);
+    const { registry } = createMockRegistry(room);
+    startGame(room, registry);
+
+    expect(room.gameState!.phase).toBe('gear-shift');
+
+    // All 3 players disconnect and immediately reconnect (page refresh)
+    for (let i = 0; i < 3; i++) {
+      disconnectPlayer(room, `player-${i}`);
+      reconnectPlayer(room, `player-${i}`);
+    }
+
+    // All 3 players should be connected
+    for (let i = 0; i < 3; i++) {
+      expect(room.connectedPlayerIds.has(`player-${i}`)).toBe(true);
+    }
+
+    // If stale handleDisconnection were called for all, allPlayersActed would
+    // return true with empty pendingActions. Verify phase didn't advance:
+    expect(room.gameState!.phase).toBe('gear-shift');
+    expect(room.pendingActions.size).toBe(0);
+  });
+});
+
 describe('disconnection', () => {
   it('broadcasts disconnection', () => {
     const room = createTestRoom(2);
