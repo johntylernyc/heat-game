@@ -11,6 +11,7 @@ import type { GamePhase, GameState, PlayerState } from '../types.js';
 import { isPlayableCard } from '../cards.js';
 import type {
   ClientGameState,
+  ClientPlayerInfo,
   PhaseType,
   PublicPlayerState,
   PrivatePlayerState,
@@ -41,10 +42,15 @@ export function getPhaseType(phase: GamePhase): PhaseType {
 
 /**
  * Build the client-visible game state for a specific player.
+ *
+ * @param playerInfo - Optional map from player ID to display info. When
+ *   provided (from Room.playerInfo), the client state includes names and
+ *   car colors for all players.
  */
 export function partitionState(
   state: GameState,
   playerIndex: number,
+  playerInfo?: Map<string, { displayName: string; carColor: string }>,
 ): ClientGameState {
   if (playerIndex < 0 || playerIndex >= state.players.length) {
     throw new Error(`Invalid playerIndex: ${playerIndex}`);
@@ -59,6 +65,13 @@ export function partitionState(
     }
   }
 
+  const infoRecord: Record<string, ClientPlayerInfo> = {};
+  if (playerInfo) {
+    for (const [id, info] of playerInfo) {
+      infoRecord[id] = { displayName: info.displayName, carColor: info.carColor as ClientPlayerInfo['carColor'] };
+    }
+  }
+
   return {
     round: state.round,
     phase: state.phase,
@@ -67,10 +80,12 @@ export function partitionState(
     turnOrder: state.turnOrder,
     lapTarget: state.lapTarget,
     raceStatus: state.raceStatus,
+    mode: state.mode,
     playerIndex,
     self,
     opponents,
     totalSpaces: state.totalSpaces,
+    playerInfo: infoRecord,
   };
 }
 
@@ -92,6 +107,7 @@ export function buildPrivateState(player: PlayerState): PrivatePlayerState {
     engineZone: [...player.engineZone],
     hasBoosted: player.hasBoosted,
     playedCards: [...player.playedCards],
+    lapRounds: [...player.lapRounds],
   };
 }
 

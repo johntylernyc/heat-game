@@ -1,9 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../hooks/useSession.js';
-import { useWebSocket } from '../hooks/useWebSocket.js';
-import { useGameState } from '../hooks/useGameState.js';
-import type { ServerMessage } from '../../server/types.js';
+import { useWebSocketContext } from '../providers/WebSocketProvider.js';
 
 const styles = {
   container: {
@@ -124,8 +122,8 @@ const TRACKS = [
 
 export function Home() {
   const navigate = useNavigate();
-  const { sessionToken, activeRoom, setSessionToken, setActiveRoom } = useSession();
-  const { state: gameState, handleServerMessage } = useGameState();
+  const { activeRoom } = useSession();
+  const { status, send, gameState } = useWebSocketContext();
 
   const [displayName, setDisplayName] = useState('');
   const [joinCode, setJoinCode] = useState('');
@@ -133,32 +131,22 @@ export function Home() {
   const [lapCount, setLapCount] = useState(1);
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [error, setError] = useState<string | null>(null);
+  // Track whether we're waiting for a qualifying game to start (skip lobby)
+  const qualifyingPending = useRef(false);
+  const qualifyingRoomCode = useRef<string | null>(null);
 
-  const onMessage = (message: ServerMessage) => {
-    handleServerMessage(message);
-
-    if (message.type === 'session-created') {
-      setSessionToken(message.sessionToken);
-    } else if (message.type === 'room-created') {
-      setActiveRoom(message.roomCode);
-      navigate(`/lobby/${message.roomCode}`);
-    } else if (message.type === 'lobby-state') {
-      setActiveRoom(message.lobby.roomCode);
-      navigate(`/lobby/${message.lobby.roomCode}`);
-    } else if (message.type === 'game-started' || message.type === 'phase-changed') {
-      // Reconnected into an active game
-      if (activeRoom) {
-        navigate(`/game/${activeRoom}`);
-      }
-    } else if (message.type === 'error') {
-      setError(message.message);
+  // Navigate based on state transitions from the WebSocket provider
+  useEffect(() => {
+    const { appPhase, roomCode } = gameState;
+    if (appPhase === 'lobby' && roomCode && !qualifyingPending.current) {
+      navigate(`/lobby/${roomCode}`);
+    } else if (appPhase === 'playing' && roomCode) {
+      qualifyingPending.current = false;
+      qualifyingRoomCode.current = null;
+      navigate(`/game/${roomCode}`);
     }
-  };
+  }, [gameState.appPhase, gameState.roomCode, navigate]);
 
-  const { status, send } = useWebSocket({
-    sessionToken,
-    onMessage,
-  });
 
   const connected = status === 'connected';
 
@@ -194,9 +182,20 @@ export function Home() {
     });
   };
 
+  const handleQualifying = () => {
+    const name = displayName.trim() || 'Solo Racer';
+    setError(null);
+    qualifyingPending.current = true;
+    send({
+      type: 'start-qualifying',
+      trackId,
+      lapCount,
+      displayName: name,
+    });
+  };
+
   const handleRejoin = () => {
     if (activeRoom) {
-      // Navigate to lobby — the server will redirect to game if it's in progress
       navigate(`/lobby/${activeRoom}`);
     }
   };
@@ -221,7 +220,7 @@ export function Home() {
         </div>
       )}
 
-      {error && <p style={styles.error}>{error}</p>}
+      {(error || gameState.error) && <p style={styles.error}>{error || gameState.error}</p>}
 
       {/* Display Name */}
       <div style={{ ...styles.card, marginBottom: '1.5rem' }}>
@@ -234,6 +233,31 @@ export function Home() {
           maxLength={20}
         />
       </div>
+
+      {/* Qualifying Laps */}
+      <div style={{ ...styles.card, borderLeft: '3px solid #ff6b35' }}>
+        <h2 style={styles.heading}>Qualifying Laps</h2>
+        <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '1rem' }}>
+          Solo practice — learn tracks and master mechanics
+        </p>
+        <label style={styles.label}>Track</label>
+        <select style={styles.select} value={trackId} onChange={(e) => setTrackId(e.target.value)}>
+          {TRACKS.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </select>
+        <label style={styles.label}>Laps</label>
+        <select style={styles.select} value={lapCount} onChange={(e) => setLapCount(Number(e.target.value))}>
+          {[1, 2, 3].map((n) => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+        <button style={styles.button} onClick={handleQualifying} disabled={!connected}>
+          Start Qualifying
+        </button>
+      </div>
+
+      <p style={styles.divider}>or</p>
 
       {/* Create Game */}
       <div style={styles.card}>

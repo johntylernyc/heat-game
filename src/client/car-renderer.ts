@@ -1,16 +1,96 @@
 /**
- * Car renderer: draws car tokens on the track at their current positions.
+ * Car renderer: draws top-down car sprites on the track.
  *
  * Handles:
- * - Car tokens in player colors at specific space/spot positions
+ * - Top-down SVG car silhouettes in player colors with directional rotation
+ * - Pre-rendered offscreen canvases per player color for performance
  * - Visual offset when multiple cars share adjacent spaces
- * - Current player highlight
+ * - Active player glow highlight
  * - Gear indicator on each car
+ * - Boost speed lines and spinout rotation states
  */
 
 import type { CameraState, CarState, TrackLayout, BoardConfig, Point } from './types.js';
 import { DEFAULT_BOARD_CONFIG } from './types.js';
 import { worldToScreen } from './camera.js';
+
+/** Car sprite dimensions in world units. */
+const CAR_LENGTH = 24;
+const CAR_WIDTH = 12;
+
+/** Pre-rendered car sprite cache: color → canvas. */
+const carSpriteCache = new Map<string, HTMLCanvasElement>();
+
+/**
+ * Generate a pre-rendered car sprite for a given color.
+ * The sprite faces right (angle=0) and is centered at its origin.
+ */
+function getCarSprite(color: string, scale: number): HTMLCanvasElement {
+  const key = `${color}_${scale.toFixed(1)}`;
+  const cached = carSpriteCache.get(key);
+  if (cached) return cached;
+
+  const w = Math.ceil(CAR_LENGTH * scale) + 4;
+  const h = Math.ceil(CAR_WIDTH * scale) + 4;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+
+  const cx = w / 2;
+  const cy = h / 2;
+  const halfL = (CAR_LENGTH * scale) / 2;
+  const halfW = (CAR_WIDTH * scale) / 2;
+
+  // Main body — rounded rectangle
+  const bodyR = 2 * scale;
+  ctx.beginPath();
+  ctx.moveTo(cx - halfL + bodyR, cy - halfW);
+  ctx.lineTo(cx + halfL - bodyR * 2, cy - halfW);
+  // Front nose taper
+  ctx.quadraticCurveTo(cx + halfL, cy - halfW * 0.4, cx + halfL, cy);
+  ctx.quadraticCurveTo(cx + halfL, cy + halfW * 0.4, cx + halfL - bodyR * 2, cy + halfW);
+  ctx.lineTo(cx - halfL + bodyR, cy + halfW);
+  ctx.quadraticCurveTo(cx - halfL, cy + halfW, cx - halfL, cy + halfW - bodyR);
+  ctx.lineTo(cx - halfL, cy - halfW + bodyR);
+  ctx.quadraticCurveTo(cx - halfL, cy - halfW, cx - halfL + bodyR, cy - halfW);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Contrasting center stripe
+  const stripe = getContrastColor(color);
+  ctx.fillStyle = stripe;
+  ctx.globalAlpha = 0.3;
+  ctx.fillRect(cx - halfL * 0.3, cy - halfW * 0.15, halfL * 0.6, halfW * 0.3);
+  ctx.globalAlpha = 1.0;
+
+  // Front wing
+  ctx.fillStyle = darken(color, 0.2);
+  ctx.fillRect(cx + halfL * 0.7, cy - halfW * 1.0, 2 * scale, halfW * 2.0);
+
+  // Rear wing
+  ctx.fillRect(cx - halfL * 0.9, cy - halfW * 1.0, 2 * scale, halfW * 2.0);
+
+  // 4 wheels (dark rectangles)
+  ctx.fillStyle = '#222222';
+  const wheelW = 3 * scale;
+  const wheelH = 2 * scale;
+  // Front-left
+  ctx.fillRect(cx + halfL * 0.45, cy - halfW - wheelH * 0.3, wheelW, wheelH);
+  // Front-right
+  ctx.fillRect(cx + halfL * 0.45, cy + halfW - wheelH * 0.7, wheelW, wheelH);
+  // Rear-left
+  ctx.fillRect(cx - halfL * 0.55, cy - halfW - wheelH * 0.3, wheelW, wheelH);
+  // Rear-right
+  ctx.fillRect(cx - halfL * 0.55, cy + halfW - wheelH * 0.7, wheelW, wheelH);
+
+  carSpriteCache.set(key, canvas);
+  return canvas;
+}
 
 /**
  * Render all car tokens on the track.
@@ -53,7 +133,7 @@ export function renderCars(
     const screenPos = worldToScreen(camera, worldPos);
     const isActive = car.playerId === activePlayerId;
 
-    renderCarToken(ctx, screenPos, car, isActive, config.carRadius * camera.zoom);
+    renderCarSprite(ctx, screenPos, car, isActive, config.carRadius * camera.zoom, space.angle);
   }
 }
 
@@ -67,41 +147,45 @@ export function renderCarAtPosition(
   camera: CameraState,
   isActive: boolean,
   config: BoardConfig = DEFAULT_BOARD_CONFIG,
+  angle?: number,
 ): void {
   const screenPos = worldToScreen(camera, worldPos);
-  renderCarToken(ctx, screenPos, car, isActive, config.carRadius * camera.zoom);
+  renderCarSprite(ctx, screenPos, car, isActive, config.carRadius * camera.zoom, angle ?? 0);
 }
 
-/** Draw a single car token. */
-function renderCarToken(
+/** Draw a single car as a rotated sprite. */
+function renderCarSprite(
   ctx: CanvasRenderingContext2D,
   pos: Point,
   car: CarState,
   isActive: boolean,
   radius: number,
+  angle: number,
 ): void {
+  const scale = radius / (CAR_WIDTH / 2);
+
   // Glow for active player
   if (isActive) {
     ctx.beginPath();
-    ctx.arc(pos.x, pos.y, radius + 4, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.ellipse(pos.x, pos.y, radius * 1.5, radius * 1.2, angle, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
     ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
   }
 
-  // Car body (filled circle)
-  ctx.beginPath();
-  ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = car.color;
-  ctx.fill();
+  // Draw pre-rendered car sprite
+  const sprite = getCarSprite(car.color, scale);
+  ctx.save();
+  ctx.translate(pos.x, pos.y);
+  ctx.rotate(angle);
+  ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
+  ctx.restore();
 
-  // Border
-  ctx.strokeStyle = isActive ? '#FFFFFF' : 'rgba(0, 0, 0, 0.5)';
-  ctx.lineWidth = isActive ? 2.5 : 1.5;
-  ctx.stroke();
-
-  // Gear number in the center
+  // Gear number centered on car
   ctx.fillStyle = getContrastColor(car.color);
-  ctx.font = `bold ${radius * 0.9}px sans-serif`;
+  ctx.font = `bold ${radius * 0.7}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(String(car.gear), pos.x, pos.y);
@@ -148,13 +232,19 @@ function computeCollisionOffset(
 
 /** Get a contrasting text color (black or white) for a given background. */
 function getContrastColor(hexColor: string): string {
-  // Parse hex color
   const hex = hexColor.replace('#', '');
   const r = parseInt(hex.substring(0, 2), 16);
   const g = parseInt(hex.substring(2, 4), 16);
   const b = parseInt(hex.substring(4, 6), 16);
-
-  // Luminance calculation
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance > 0.5 ? '#000000' : '#FFFFFF';
+}
+
+/** Darken a hex color by a factor (0-1). */
+function darken(hexColor: string, factor: number): string {
+  const hex = hexColor.replace('#', '');
+  const r = Math.round(parseInt(hex.substring(0, 2), 16) * (1 - factor));
+  const g = Math.round(parseInt(hex.substring(2, 4), 16) * (1 - factor));
+  const b = Math.round(parseInt(hex.substring(4, 6), 16) * (1 - factor));
+  return `rgb(${r},${g},${b})`;
 }

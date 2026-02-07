@@ -3,6 +3,7 @@ import type {
   ServerMessage,
   ClientGameState,
   LobbyState,
+  PlayerStanding,
 } from '../../server/types.js';
 
 export type AppPhase = 'home' | 'lobby' | 'playing' | 'finished';
@@ -20,6 +21,8 @@ export interface GameStoreState {
   lobby: LobbyState | null;
   /** Full game state from server (when playing). */
   gameState: ClientGameState | null;
+  /** Final standings from the server (when finished). */
+  standings: PlayerStanding[] | null;
   /** Last error from server. */
   error: string | null;
 }
@@ -31,6 +34,7 @@ const initialState: GameStoreState = {
   roomCode: null,
   lobby: null,
   gameState: null,
+  standings: null,
   error: null,
 };
 
@@ -40,7 +44,7 @@ type Action =
   | { type: 'LOBBY_STATE'; lobby: LobbyState }
   | { type: 'GAME_STARTED'; state: ClientGameState }
   | { type: 'PHASE_CHANGED'; state: ClientGameState }
-  | { type: 'GAME_OVER' }
+  | { type: 'GAME_OVER'; standings: PlayerStanding[] }
   | { type: 'ERROR'; message: string }
   | { type: 'CLEAR_ERROR' }
   | { type: 'RESET' };
@@ -58,7 +62,7 @@ function reducer(state: GameStoreState, action: Action): GameStoreState {
     case 'PHASE_CHANGED':
       return { ...state, gameState: action.state };
     case 'GAME_OVER':
-      return { ...state, appPhase: 'finished' };
+      return { ...state, appPhase: 'finished', standings: action.standings };
     case 'ERROR':
       return { ...state, error: action.message };
     case 'CLEAR_ERROR':
@@ -91,7 +95,7 @@ export function useGameState() {
         dispatch({ type: 'PHASE_CHANGED', state: message.state });
         break;
       case 'game-over':
-        dispatch({ type: 'GAME_OVER' });
+        dispatch({ type: 'GAME_OVER', standings: message.standings });
         break;
       case 'error':
         dispatch({ type: 'ERROR', message: message.message });

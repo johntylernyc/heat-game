@@ -13,6 +13,7 @@ import type {
   StandingEntry,
   SpaceLayout,
   TrackLayout,
+  VisualTheme,
 } from './types.js';
 import { DEFAULT_BOARD_CONFIG, PLAYER_COLORS } from './types.js';
 import { generateTrackLayout } from './track-layout.js';
@@ -33,6 +34,7 @@ import {
   renderSlipstreamIndicator,
   getPhaseDisplay,
 } from './overlay.js';
+import { getVisualTheme } from './visual-themes.js';
 
 export interface BoardState {
   cars: CarState[];
@@ -83,6 +85,9 @@ export function createGameBoard(
 
   // Generate track layout
   const layout = generateTrackLayout(trackData, config);
+
+  // Visual theme
+  const theme: VisualTheme = getVisualTheme(trackData.country);
 
   // Camera
   let camera: CameraState = createCamera();
@@ -189,12 +194,12 @@ export function createGameBoard(
     // Clear
     ctx.clearRect(0, 0, width, height);
 
-    // Background
+    // Background (themed if available, else default)
     ctx.fillStyle = '#1a1a2e';
     ctx.fillRect(0, 0, width, height);
 
-    // Track
-    renderTrack(ctx, layout, camera, config);
+    // Track (with visual theme)
+    renderTrack(ctx, layout, camera, config, theme);
 
     // Cars
     const { cars } = currentState;
@@ -210,9 +215,10 @@ export function createGameBoard(
     for (const car of cars) {
       const animPos = animations.getAnimatedPosition(car.playerId, layout);
       if (animPos) {
+        const animAngle = animations.getAnimatedAngle(car.playerId, layout) ?? 0;
         renderCarAtPosition(
           ctx, animPos, car, camera,
-          car.playerId === activePlayerId, config,
+          car.playerId === activePlayerId, config, animAngle,
         );
       }
     }

@@ -221,13 +221,17 @@ export function PlayerDashboard({
       )}
 
       {/* Slipstream Controls */}
-      {phaseGroup === 'slipstream' && isActivePlayer && slipstreamEligible && (
+      {phaseGroup === 'slipstream' && isActivePlayer && (
         <div
           style={{
             padding: 12,
             borderRadius: 8,
-            background: 'rgba(6, 182, 212, 0.1)',
-            border: '1px solid rgba(6, 182, 212, 0.3)',
+            background: slipstreamEligible
+              ? 'rgba(6, 182, 212, 0.1)'
+              : 'rgba(100, 116, 139, 0.1)',
+            border: slipstreamEligible
+              ? '1px solid rgba(6, 182, 212, 0.3)'
+              : '1px solid rgba(100, 116, 139, 0.3)',
           }}
           data-testid="slipstream-prompt"
         >
@@ -236,29 +240,33 @@ export function PlayerDashboard({
             fontWeight: 600,
             textTransform: 'uppercase' as const,
             letterSpacing: 1,
-            color: '#06b6d4',
+            color: slipstreamEligible ? '#06b6d4' : '#94a3b8',
             marginBottom: 8,
           }}>
-            Slipstream Available — Move +2 spaces
+            {slipstreamEligible
+              ? 'Slipstream Available — Move +2 spaces'
+              : 'No slipstream — no car ahead in range'}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              type="button"
-              style={{
-                padding: '8px 16px',
-                borderRadius: 6,
-                border: 'none',
-                fontWeight: 600,
-                fontSize: 13,
-                cursor: 'pointer',
-                background: '#0891b2',
-                color: '#fff',
-              }}
-              onClick={() => onSlipstream(true)}
-              data-testid="slipstream-accept"
-            >
-              Accept
-            </button>
+            {slipstreamEligible && (
+              <button
+                type="button"
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 6,
+                  border: 'none',
+                  fontWeight: 600,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  background: '#0891b2',
+                  color: '#fff',
+                }}
+                onClick={() => onSlipstream(true)}
+                data-testid="slipstream-accept"
+              >
+                Accept
+              </button>
+            )}
             <button
               type="button"
               style={{

@@ -498,3 +498,74 @@ describe('race setup integration', () => {
     );
   });
 });
+
+// -- Qualifying Mode via setupRace --
+
+describe('setupRace qualifying mode', () => {
+  it('allows 1 player in qualifying mode', () => {
+    const state = setupRace({
+      playerIds: ['solo'],
+      track: usaTrack,
+      seed: 42,
+      mode: 'qualifying',
+    });
+
+    expect(state.players).toHaveLength(1);
+    expect(state.mode).toBe('qualifying');
+    expect(state.raceStatus).toBe('qualifying');
+  });
+
+  it('still rejects 1 player in race mode', () => {
+    expect(() =>
+      setupRace({
+        playerIds: ['solo'],
+        track: usaTrack,
+        seed: 42,
+      }),
+    ).toThrow('Need at least 2 players');
+  });
+
+  it('passes mode through to game state', () => {
+    const state = setupRace({
+      playerIds: ['solo'],
+      track: usaTrack,
+      seed: 42,
+      mode: 'qualifying',
+    });
+
+    expect(state.mode).toBe('qualifying');
+  });
+
+  it('defaults mode to race', () => {
+    const state = setupRace({
+      playerIds: makePlayerIds(2),
+      track: usaTrack,
+      seed: 42,
+    });
+
+    expect(state.mode).toBe('race');
+  });
+
+  it('sets qualifying player on starting grid', () => {
+    const state = setupRace({
+      playerIds: ['solo'],
+      track: usaTrack,
+      seed: 42,
+      mode: 'qualifying',
+    });
+
+    // Pole position
+    expect(state.players[0].position).toBe(usaTrack.startingGrid[0].spaceIndex);
+  });
+
+  it('initializes lapRounds as empty', () => {
+    const state = setupRace({
+      playerIds: ['solo'],
+      track: usaTrack,
+      seed: 42,
+      mode: 'qualifying',
+    });
+
+    expect(state.players[0].lapRounds).toEqual([]);
+  });
+});
