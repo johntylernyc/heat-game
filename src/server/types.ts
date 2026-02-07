@@ -267,6 +267,28 @@ export interface GameOverMessage {
   standings: PlayerStanding[];
 }
 
+export interface QualifyingResultMessage {
+  type: 'qualifying-result';
+  trackId: string;
+  lapCount: number;
+  lapTimes: number[];
+  bestLap: number;
+  totalTime: number;
+}
+
+export interface RaceResultMessage {
+  type: 'race-result';
+  trackId: string;
+  lapCount: number;
+  position: number;
+  totalPlayers: number;
+  points: number;
+  standings: { profileId: string; displayName: string; position: number }[];
+  spinouts: number;
+  boostsUsed: number;
+  heatPaid: number;
+}
+
 export interface ReconnectAvailableMessage {
   type: 'reconnect-available';
   roomCode: string;
@@ -290,6 +312,8 @@ export type ServerMessage =
   | PlayerDisconnectedMessage
   | PlayerReconnectedMessage
   | GameOverMessage
+  | QualifyingResultMessage
+  | RaceResultMessage
   | ReconnectAvailableMessage
   | ErrorMessage;
 
