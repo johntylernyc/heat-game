@@ -1267,3 +1267,500 @@ This is valuable but secondary to the primary goal of giving players a way to pl
 - [ ] A new player can go from opening the app to playing their first qualifying lap in under 30 seconds (3 clicks: Qualifying Laps → pick track → Start)
 - [ ] All core mechanics are learnable in qualifying: gear shifting, card play, stress resolution, boost, cooldown, corner heat payment, spinout, deck reshuffling
 - [ ] The qualifying flow naturally funnels toward multiplayer via the "Race Online" button on the results screen
+
+---
+
+# Epic: Browser Connectivity & App Shell Fixes
+
+- type: epic
+- priority: 0
+- labels: epic, bug, frontend, backend, infrastructure, P0
+
+## Description
+
+The browser-based game is **completely blocked from being playable end-to-end**. QA playtesting (via mcp-playwright) revealed that creating a game on the Home page and navigating to the Lobby page destroys the room on the server, making it impossible to ever start a game through the UI. This epic addresses the P0 navigation blocker plus all related connectivity, error recovery, and UX issues discovered during testing.
+
+**Current state of the problem:**
+
+The App Shell epic (ht-yawl) delivered a working SPA with three pages (Home, Lobby, Game), each of which independently instantiates a `useWebSocket` hook. This means every page transition creates a brand-new WebSocket connection and destroys the previous one. The server's disconnect handler (`handleClose` in `ws-server.ts:568`) sees all players disconnected from a `waiting`-status room and immediately deletes it (line 588–592). By the time the Lobby page mounts and opens its new WebSocket, the room no longer exists. The lobby permanently shows "Connecting..." and the game can never start.
+
+This is a fundamental architecture problem, not a minor bug. The fix requires lifting WebSocket lifecycle management out of individual page components and into a shared layer that persists across route changes.
+
+### Root Cause Analysis
+
+**Why the room is destroyed:**
+
+1. User clicks "Create Game" on Home page → Home's `useWebSocket` sends `create-room` → server creates room, adds player
+2. Server responds with `room-created` → Home navigates to `/lobby/:roomCode`
+3. React Router unmounts Home → Home's `useWebSocket` cleanup runs → WebSocket closes
+4. Server's `ws.onclose` fires → `handleClose()` calls `disconnectPlayer()` → `connectedPlayerIds` drops to 0
+5. Server checks: `allPlayersDisconnected(room) && room.status !== 'playing'` → **true** → room is deleted
+6. Lobby mounts → Lobby's `useWebSocket` opens new connection → gets new player ID and session token
+7. Lobby sends `resume-session` with old token → server finds session but room is gone → session.roomId is cleared
+8. Lobby shows "Connecting..." forever — room doesn't exist, no lobby-state arrives
+
+**The architectural flaw:** Per-page WebSocket connections in an SPA. Every route change = disconnect + reconnect = server sees abandonment.
+
+## Changes Required
+
+### 1. Shared WebSocket Provider (P0 — fixes the blocker)
+
+Lift WebSocket lifecycle to a React context provider that wraps the entire application, above the router. A single WebSocket connection persists across all page transitions.
+
+**Implementation:**
+
+Create a `WebSocketProvider` component (`src/client/providers/WebSocketProvider.tsx`):
+
+```typescript
+// Pseudocode structure
+const WebSocketContext = createContext<WebSocketContextValue>(null);
+
+export function WebSocketProvider({ children }) {
+  const { sessionToken, setSessionToken } = useSession();
+  const [gameState, dispatch] = useReducer(gameStateReducer, initialGameState);
+
+  const { status, send, disconnect } = useWebSocket({
+    sessionToken,
+    onMessage: (msg) => {
+      dispatch(msg);           // Feed all messages into shared state
+      if (msg.type === 'session-created') setSessionToken(msg.sessionToken);
+    },
+  });
+
+  return (
+    <WebSocketContext.Provider value={{ status, send, gameState }}>
+      {children}
+    </WebSocketContext.Provider>
+  );
+}
+```
+
+**What changes in each page:**
+- **Home, Lobby, Game**: Remove local `useWebSocket()` and `useGameState()` calls. Instead, call `useWebSocketContext()` to access the shared connection and game state.
+- **Navigation logic**: Move server-message-driven navigation (e.g., `room-created` → navigate to lobby) into a shared `NavigationHandler` component or into the provider itself using `useNavigate()`.
+- The `useWebSocket` hook itself remains unchanged — it's just called once at the top level instead of per-page.
+
+**App.tsx changes:**
+
+```tsx
+function App() {
+  return (
+    <BrowserRouter>
+      <WebSocketProvider>
+        <NavigationHandler />
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/lobby/:roomCode" element={<Lobby />} />
+          <Route path="/game/:roomCode" element={<Game />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </WebSocketProvider>
+    </BrowserRouter>
+  );
+}
+```
+
+### 2. Server-Side Grace Period for Waiting Rooms (P0 — defense in depth)
+
+Even after fixing the client, add a server-side grace period before destroying waiting rooms with disconnected players. This protects against brief disconnects (network hiccups, browser refresh, mobile tab switching).
+
+**Implementation in `handleClose()` (`ws-server.ts`):**
+
+```typescript
+// Instead of immediately deleting:
+if (allPlayersDisconnected(room) && room.status !== 'playing') {
+  // Schedule cleanup after grace period instead of immediate deletion
+  scheduleRoomCleanup(state, room, WAITING_ROOM_GRACE_PERIOD_MS);
+}
+```
+
+- `WAITING_ROOM_GRACE_PERIOD_MS`: 30 seconds (configurable)
+- If any player reconnects during the grace period, cancel the scheduled cleanup
+- If the grace period expires and still no players connected, then delete the room
+- Track the cleanup timer on the room object (e.g., `room.cleanupTimer`)
+
+**In `handleResumeSession()` and `handleJoinRoom()`:**
+- When a player reconnects to a room that has a pending cleanup timer, cancel the timer
+
+### 3. Stale Session Token Handling (P1)
+
+**Problem:** After a server restart, `localStorage` still holds an old session token. The client sends `resume-session`, the server responds with `"Invalid session token"`, and the UI shows the error but stays stuck — no redirect, no recovery.
+
+**Fix (client-side):**
+- In the `WebSocketProvider`'s message handler, when receiving an `error` message with `"Invalid session token"`:
+  - Clear the stored session token from `localStorage`
+  - Clear the stored `activeRoom` from `localStorage`
+  - The `useWebSocket` hook will automatically get a new session on the next connection (since it always sends a `session-created` on connect)
+  - Redirect to Home page if not already there
+
+**Fix (server-side):**
+- No server changes needed — the server already sends an error and the connection remains valid (a new `session-created` was sent on connect before `resume-session` was processed)
+
+### 4. Lobby Direct-URL Navigation (P1)
+
+**Problem:** If a user pastes a lobby URL (`/lobby/ABCDEF`) directly into their browser, the Lobby component calls `setActiveRoom(roomCode)` but never sends a `join-room` message. It relies entirely on `resume-session` which may not have context for this room (e.g., the user was sent the link by a friend and has never been in this room).
+
+**Fix:**
+- In the Lobby component's `useEffect`, after the WebSocket connects:
+  - If the user has no lobby state for this room AND they haven't been auto-joined via session resume:
+    - Prompt the user for a display name (or use a stored one)
+    - Send a `join-room` message with the room code from the URL params
+  - If the room doesn't exist, the server will respond with `"Room not found"` and the lobby should redirect to Home with an appropriate message
+
+**Implementation approach:**
+- The `WebSocketProvider` should expose a `joinRoom(roomCode, displayName)` action
+- The Lobby component checks: "Am I in this room?" If not after a brief delay (waiting for `resume-session` to complete), show a join prompt or auto-join
+
+### 5. Error Recovery in Lobby (P1)
+
+**Problem:** When `resume-session` fails or the room has been deleted, the lobby UI is stuck showing "Connecting..." forever. There's no error state, no redirect, and no back button.
+
+**Fix:**
+- Add a timeout (e.g., 5 seconds after WebSocket connects) — if no `lobby-state` message has arrived for this room, show an error state
+- Error state displays: "Room not found or expired" with a "Back to Home" button
+- When the server sends `error` with `"Room not found"`, immediately show this state instead of waiting for the timeout
+- Add a visible "Back to Home" link/button on the Lobby page at all times (not just on error)
+
+### 6. Favicon (P2)
+
+**Problem:** 404 error in console for `/favicon.ico`.
+
+**Fix:**
+- Add a simple favicon to `src/client/` (can be a basic racing-themed SVG favicon)
+- Reference it in `index.html`: `<link rel="icon" type="image/svg+xml" href="/favicon.svg" />`
+- Alternatively, add a minimal `public/favicon.ico` file
+
+### 7. React Strict Mode WebSocket Warnings (P2 — cosmetic)
+
+**Problem:** React strict mode's double-mount behavior causes `useWebSocket` to create a connection, immediately tear it down, then create another. This produces `WebSocket was closed before the connection was established` warnings in the console.
+
+**Fix:**
+- This is cosmetic and only occurs in development mode (strict mode double-mount)
+- The current cleanup in `useWebSocket` already handles this correctly (sets `mounted = false` and closes the WS)
+- To suppress the noisy warnings, add a small delay before the initial connection in the cleanup-aware path, or simply document that these warnings are expected in dev mode
+- **No production impact** — strict mode double-mount only runs in development
+
+### Previously Filed Server Bugs (Not in This Epic's Scope)
+
+The following bugs were found during QA and already have their own beads. They are tracked separately and should NOT be duplicated in this epic:
+
+- **ht-fcyn** (P1): Simultaneous phase errors delivered to wrong player
+- **ht-uhxf** (P1): No input validation at action submission time
+- **ht-jztc** (P1): Permanent soft-lock after invalid action
+- **ht-vlkj** (P1): Reconnection causes premature phase execution
+- **ht-onon** (P2): Duplicate resume-session destroys session token
+
+These are server-side game logic bugs. This epic focuses on the connectivity and app shell layer.
+
+## Acceptance Criteria
+
+### Shared WebSocket Provider (P0)
+- [ ] A single WebSocket connection is established when the app loads and persists across all route changes
+- [ ] Navigating from Home → Lobby → Game does not close/reopen the WebSocket
+- [ ] Creating a game on the Home page and navigating to the Lobby page does NOT destroy the room on the server
+- [ ] Game state (lobby state, game state, player ID) is shared across all pages via React context
+- [ ] Each page component consumes the shared connection via `useWebSocketContext()` instead of creating its own
+- [ ] The full flow works: create game → navigate to lobby → see lobby state → second player joins → start game → navigate to game page → play
+
+### Server-Side Grace Period (P0)
+- [ ] Waiting rooms are NOT immediately deleted when all players disconnect
+- [ ] A configurable grace period (default 30 seconds) delays cleanup of empty waiting rooms
+- [ ] If a player reconnects within the grace period, the room is preserved and the timer is cancelled
+- [ ] If the grace period expires with no reconnections, the room is deleted as before
+- [ ] Playing rooms are unaffected (they already survive disconnections)
+- [ ] Existing room cleanup tests continue to pass
+
+### Stale Session Handling (P1)
+- [ ] When the server responds with "Invalid session token", the client clears the stored token and activeRoom from localStorage
+- [ ] After clearing a stale token, the client uses the fresh session created on connect (no stuck state)
+- [ ] The user is redirected to the Home page if they were on Lobby or Game with a stale session
+- [ ] No error banner persists after session recovery — the UI is in a clean state
+
+### Lobby Direct-URL Navigation (P1)
+- [ ] Pasting a lobby URL (`/lobby/ABCDEF`) into the browser and loading the page either:
+  - (a) Resumes into the room if the user has a valid session for it, OR
+  - (b) Prompts for a display name and sends `join-room` if the user has no session for this room
+- [ ] If the room doesn't exist, the user sees "Room not found" and can navigate back to Home
+
+### Error Recovery (P1)
+- [ ] If no lobby-state arrives within 5 seconds of connecting, the Lobby page shows an error state (not infinite "Connecting...")
+- [ ] Error state includes a "Back to Home" button
+- [ ] Server "Room not found" errors immediately trigger the error state
+- [ ] A "Back to Home" link is always visible on the Lobby page
+
+### Favicon (P2)
+- [ ] No 404 for `/favicon.ico` in the browser console
+- [ ] A favicon is visible in the browser tab
+
+### Console Warnings (P2)
+- [ ] React strict mode WebSocket warnings are either suppressed or documented as expected dev-mode behavior
+- [ ] No unexpected WebSocket errors appear in the console during normal operation
+
+### Regression
+- [ ] All existing tests (engine, room, server, component) continue to pass
+- [ ] Multiplayer flow with 2+ players still works end-to-end
+- [ ] Session reconnection after page refresh still works
+- [ ] Room cleanup after TTL expiration still works
+
+---
+
+# Epic: Player Profiles, Stats & Leaderboards
+
+- type: epic
+- priority: 1
+- labels: epic, phase-3, frontend, backend, persistence
+
+## Description
+
+Add persistent player identity, game statistics tracking, and leaderboards to transform Heat from a disposable per-session experience into a game with history, progression, and competition. Today, every time a player opens the app they're anonymous — their qualifying lap times vanish, their race victories are forgotten, and there's no reason to come back and improve. This epic changes that.
+
+**Why this is the highest-impact 1.0 feature:**
+
+1. **Qualifying becomes meaningful**: The Qualifying Laps epic gives players a solo mode, but without leaderboards, there's nothing to beat except your own memory. Per-track leaderboards turn qualifying into a competitive time-trial mode.
+2. **Multiplayer has stakes**: Race results matter when they're recorded. Win/loss records, podium finishes, and head-to-head stats give multiplayer races weight.
+3. **Retention loop**: "Can I beat my best lap on Italy?" or "I'm #3 on the USA leaderboard" are reasons to reopen the app. Without persistence, there's no pull to return.
+4. **1.0 completeness**: A game without profiles feels like a tech demo. Profiles signal that the game is a real product.
+
+### Player Profiles
+
+**Profile creation (lightweight, no auth for MVP):**
+- On first visit, the app prompts: "Choose a driver name" (persisted to `localStorage`)
+- A unique profile ID is generated (UUID) and stored in `localStorage` alongside the session token
+- The profile ID is sent to the server on WebSocket connect and attached to all game results
+- No password, no email, no OAuth — just a persistent local identity
+- Players can change their display name at any time from a settings/profile screen
+- Profile also stores a preferred car color (used as default in lobbies)
+
+**Profile data model:**
+
+```typescript
+interface PlayerProfile {
+  id: string;              // UUID, generated on first visit
+  displayName: string;     // Chosen by player, editable
+  preferredColor: CarColor;
+  createdAt: number;       // Timestamp
+  stats: PlayerStats;
+}
+
+interface PlayerStats {
+  // Qualifying
+  qualifyingRuns: number;
+  bestLapTimes: Record<string, number>;  // trackId → best lap time (rounds)
+  bestTotalTimes: Record<string, Record<number, number>>;  // trackId → lapCount → best total
+
+  // Multiplayer
+  racesPlayed: number;
+  racesWon: number;
+  podiumFinishes: number;  // Top 3
+  totalPoints: number;     // Championship-style cumulative points
+
+  // Fun stats
+  totalSpinouts: number;
+  totalBoostsUsed: number;
+  totalHeatPaid: number;   // Heat cards spent on corners
+  longestWinStreak: number;
+  currentWinStreak: number;
+}
+```
+
+**Storage strategy (MVP — local-first):**
+
+For the 1.0 MVP, all profile and stats data lives client-side in `localStorage`. This keeps the architecture simple (no database, no auth) while still delivering the full user experience. The server validates and computes results, then sends them to clients for local storage.
+
+Future enhancement (post-1.0): Server-side persistence with a simple file-based or SQLite store, enabling cross-device profiles and server-authoritative leaderboards. The client-side structure is designed to be forward-compatible with this.
+
+**Server-side result reporting:**
+
+After each race or qualifying session ends, the server computes a `GameResult` and sends it to each client:
+
+```typescript
+interface GameResult {
+  type: 'qualifying-result' | 'race-result';
+  trackId: string;
+  lapCount: number;
+  timestamp: number;
+
+  // Qualifying-specific
+  lapTimes?: number[];
+  bestLap?: number;
+  totalTime?: number;
+
+  // Race-specific
+  position?: number;
+  totalPlayers?: number;
+  points?: number;
+  playerResults?: { profileId: string; displayName: string; position: number; }[];
+}
+```
+
+The client receives this, updates `PlayerStats` in `localStorage`, and if the result is a new personal best, flags it for the leaderboard submission flow.
+
+### Qualifying Leaderboards
+
+**Per-track leaderboards** showing the fastest qualifying lap times. Each of the 4 base tracks has its own leaderboard.
+
+**Leaderboard entry:**
+
+```typescript
+interface LeaderboardEntry {
+  profileId: string;
+  displayName: string;
+  bestLapTime: number;     // Rounds (lower is better)
+  bestTotalTime: number;   // For the default lap count
+  achievedAt: number;      // Timestamp
+}
+```
+
+**MVP implementation (local leaderboard):**
+
+Since there's no server-side persistence in the MVP, the leaderboard is populated from the local player's own history. This is still valuable — it shows personal progression over time:
+- "Your best lap on USA: 4 rounds (achieved Jan 15)"
+- Track-by-track personal bests displayed on the qualifying setup screen
+- Results screen shows if the run was a new personal best (highlighted, celebratory)
+
+**Shared leaderboard (stretch goal for 1.0):**
+
+If time permits, add a simple server-side leaderboard:
+- Server stores the top N entries per track in a JSON file on disk
+- When a qualifying run completes, the server checks if it's a top-N time and updates the file
+- Leaderboard data is sent to clients on request (not real-time — polled on page load)
+- No authentication means entries can be spoofed, but for a local/friends game this is acceptable
+
+### Race History
+
+A scrollable history of recent games on the profile screen:
+
+```typescript
+interface GameHistoryEntry {
+  type: 'qualifying' | 'race';
+  trackId: string;
+  lapCount: number;
+  timestamp: number;
+  result: {
+    position?: number;       // Race only
+    totalPlayers?: number;   // Race only
+    bestLap: number;
+    totalTime: number;
+  };
+}
+```
+
+- Stored in `localStorage` as an array (capped at last 50 entries)
+- Displayed on the profile screen as a compact list: date, track, result
+- Filterable by track and by type (qualifying vs. race)
+
+### Frontend: Profile & Stats Screens
+
+**Profile screen (`/profile` route):**
+- Accessed from a persistent header/nav element (profile icon or "My Profile" link)
+- Shows:
+  - Display name (editable inline)
+  - Preferred car color (clickable color picker)
+  - Overall stats summary: races played, win rate, total qualifying runs
+  - Per-track qualifying bests in a grid (4 tracks × best lap time)
+  - Recent game history (last 10, with "View All" to see full history)
+
+**Profile badge in header:**
+- A small persistent element visible on all pages (including Home) showing the player's name
+- Clicking it navigates to `/profile`
+- On first visit (no profile yet), shows "Set up your driver profile" prompt
+
+**Leaderboard panel on qualifying setup:**
+- When selecting a track for qualifying, show the player's personal best for that track
+- After completing qualifying, the results screen shows personal best comparison ("New PB!" or "2 rounds off your best")
+
+**Stats integration in game HUD:**
+- During qualifying, the Lap Timer panel shows the player's personal best for comparison
+- During multiplayer, the post-race results screen shows updated career stats
+
+### Backend: Result Computation & Delivery
+
+**End-of-qualifying changes:**
+- After the qualifying session ends, the server sends a `qualifying-result` message to the client containing lap times, best lap, and total time
+- Client-side: update `PlayerStats.bestLapTimes` if this is a new personal best, increment `qualifyingRuns`, save to `localStorage`
+
+**End-of-race changes:**
+- After the final standings are computed, the server sends a `race-result` message to each client containing their position, points earned, and the full standings
+- Client-side: update `racesPlayed`, `racesWon` (if position === 1), `podiumFinishes` (if position <= 3), `totalPoints`, streak tracking, save to `localStorage`
+
+**New server message types:**
+
+```typescript
+// Server → Client
+type ServerMessage =
+  | ... // existing
+  | { type: 'qualifying-result'; trackId: string; lapCount: number; lapTimes: number[]; bestLap: number; totalTime: number; }
+  | { type: 'race-result'; trackId: string; position: number; totalPlayers: number; points: number; standings: { profileId: string; displayName: string; position: number; }[]; }
+```
+
+No new client→server message types needed for the MVP (stats are computed server-side and stored client-side).
+
+### Data Migration & Compatibility
+
+- `localStorage` keys are versioned: `heat-profile-v1`, `heat-stats-v1`, `heat-history-v1`
+- If a future version needs to change the schema, a migration function reads the old version and writes the new one
+- The existing `heat-session-token` and `heat-active-room` keys are unchanged
+
+## Acceptance Criteria
+
+### Player Profiles
+- [ ] On first visit, the app prompts the player to choose a display name
+- [ ] A unique profile ID (UUID) is generated and persisted in `localStorage`
+- [ ] The display name is used as the default when creating or joining games (no need to re-enter each time)
+- [ ] The player can change their display name from the profile screen
+- [ ] The player can set a preferred car color that is auto-selected in lobbies
+- [ ] Profile data survives browser refresh (persisted in `localStorage`)
+
+### Stats Tracking — Qualifying
+- [ ] After each qualifying run, `qualifyingRuns` is incremented
+- [ ] Per-track best lap time is updated if the new run has a faster lap
+- [ ] Per-track best total time (for a given lap count) is updated if the new run is faster
+- [ ] The qualifying results screen shows whether the run was a new personal best
+
+### Stats Tracking — Multiplayer
+- [ ] After each multiplayer race, `racesPlayed` is incremented
+- [ ] `racesWon` is incremented when the player finishes in 1st place
+- [ ] `podiumFinishes` is incremented when the player finishes in the top 3
+- [ ] `totalPoints` accumulates championship-style points across all races
+- [ ] Win streak tracking correctly increments, resets, and records the longest streak
+- [ ] Fun stats (spinouts, boosts, heat paid) are tracked and updated
+
+### Stats Tracking — Fun Stats
+- [ ] `totalSpinouts` increments each time the player spins out
+- [ ] `totalBoostsUsed` increments each time the player activates boost
+- [ ] `totalHeatPaid` increments by the amount of heat paid at corners
+
+### Leaderboards (Local MVP)
+- [ ] The qualifying setup screen shows the player's personal best lap time for the selected track
+- [ ] The qualifying results screen compares the run against the player's personal best
+- [ ] A "Personal Bests" section on the profile screen shows best laps for all 4 tracks
+
+### Race History
+- [ ] Game history entries are saved to `localStorage` after each qualifying run and race
+- [ ] History is capped at 50 entries (oldest entries are pruned)
+- [ ] The profile screen displays recent game history with date, track, and result
+- [ ] History entries are filterable by track and game type (qualifying vs. race)
+
+### Profile Screen UI
+- [ ] `/profile` route renders the player's profile with stats, bests, and history
+- [ ] Display name is editable inline on the profile screen
+- [ ] Preferred car color is selectable on the profile screen
+- [ ] Overall stats summary shows: races played, win rate, qualifying runs, total points
+- [ ] Per-track qualifying bests are displayed in a grid layout
+- [ ] A persistent profile badge/link is visible on all pages for easy navigation to the profile
+
+### Server-Side Result Delivery
+- [ ] Server sends `qualifying-result` message after a qualifying session ends
+- [ ] Server sends `race-result` message to each client after a multiplayer race ends
+- [ ] Result messages include all data needed for client-side stat updates (positions, points, lap times)
+
+### Data Persistence & Compatibility
+- [ ] All profile data uses versioned `localStorage` keys (`heat-profile-v1`, etc.)
+- [ ] Clearing `localStorage` resets the profile (new profile created on next visit)
+- [ ] Existing session token and active room keys are not affected
+- [ ] The profile system works regardless of whether a game server is running (local data is always accessible)
+
+### Regression
+- [ ] All existing tests continue to pass
+- [ ] Existing multiplayer and qualifying flows work unchanged for users who haven't set up a profile
+- [ ] The app gracefully handles missing or corrupted profile data in `localStorage` (falls back to defaults)
