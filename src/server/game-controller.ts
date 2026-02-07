@@ -48,6 +48,7 @@ import {
   setRoomStatus,
 } from './room.js';
 import { isPlayableCard } from '../cards.js';
+import { shiftGear } from '../gear.js';
 
 // -- Connection Registry --
 
@@ -158,6 +159,10 @@ function handleSimultaneousAction(
 
   // Validate the action matches the current phase
   validateActionForPhase(state.phase, message);
+
+  // Validate action content (gear rules, card count, playability) so errors
+  // route to the offending player rather than surfacing during batch execution.
+  validateSimultaneousActionContent(state, playerIndex, message);
 
   // Store the action (overwrites previous if resubmitted)
   room.pendingActions.set(playerIndex, message);
@@ -638,6 +643,68 @@ function validateActionForPhase(phase: GamePhase, message: ClientMessage): void 
   const allowed = VALID_ACTIONS_FOR_PHASE[phase];
   if (!allowed || !allowed.includes(message.type)) {
     throw new Error(`Action '${message.type}' not valid in phase '${phase}'`);
+  }
+}
+
+/**
+ * Validate the content of a simultaneous action at submission time.
+ * This catches invalid gear shifts, wrong card counts, and unplayable card
+ * selections BEFORE they enter pendingActions, so errors route to the
+ * offending player rather than surfacing during batch execution.
+ */
+function validateSimultaneousActionContent(
+  state: GameState,
+  playerIndex: number,
+  message: ClientMessage,
+): void {
+  const player = state.players[playerIndex];
+
+  if (message.type === 'gear-shift') {
+    const msg = message as { type: 'gear-shift'; targetGear: Gear };
+    const result = shiftGear(player, msg.targetGear);
+    if (!result.ok) {
+      throw new Error(result.reason);
+    }
+  } else if (message.type === 'play-cards') {
+    const msg = message as { type: 'play-cards'; cardIndices: number[] };
+    const requiredCount = CARDS_PER_GEAR[player.gear];
+
+    // Allow empty selection for cluttered hand
+    if (msg.cardIndices.length !== 0 && msg.cardIndices.length !== requiredCount) {
+      throw new Error(
+        `Must play exactly ${requiredCount} card(s) in gear ${player.gear}, got ${msg.cardIndices.length}`,
+      );
+    }
+
+    // Validate indices and playability
+    for (const idx of msg.cardIndices) {
+      if (idx < 0 || idx >= player.hand.length) {
+        throw new Error(`Invalid hand index: ${idx}`);
+      }
+      if (!isPlayableCard(player.hand[idx])) {
+        throw new Error(`Card of type '${player.hand[idx].type}' cannot be played`);
+      }
+    }
+
+    // Check for duplicate indices
+    if (new Set(msg.cardIndices).size !== msg.cardIndices.length) {
+      throw new Error('Duplicate card indices');
+    }
+  } else if (message.type === 'discard') {
+    const msg = message as { type: 'discard'; cardIndices: number[] };
+
+    for (const idx of msg.cardIndices) {
+      if (idx < 0 || idx >= player.hand.length) {
+        throw new Error(`Invalid hand index: ${idx}`);
+      }
+      if (!isPlayableCard(player.hand[idx])) {
+        throw new Error('Can only discard playable cards');
+      }
+    }
+
+    if (new Set(msg.cardIndices).size !== msg.cardIndices.length) {
+      throw new Error('Duplicate card indices');
+    }
   }
 }
 
