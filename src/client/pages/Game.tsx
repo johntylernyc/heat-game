@@ -240,7 +240,7 @@ export function Game() {
 
     const totalPlayers = 1 + gs.opponents.length;
     const cars = buildCarStates(gs.self, gs.opponents, gs.playerIndex, totalPlayers);
-    const carStandings = buildStandings(cars);
+    const carStandings = buildStandings(cars, gs.playerInfo);
 
     // Slipstream indicator: show when player is eligible during slipstream phase
     let slipstream: [number, number, string] | null = null;

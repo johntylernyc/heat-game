@@ -94,10 +94,11 @@ export function renderStandings(
     ctx.fillStyle = '#FFFFFF';
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
-    const displayName = entry.playerId.length > 8
-      ? entry.playerId.substring(0, 8) + '...'
-      : entry.playerId;
-    ctx.fillText(displayName, x + SIDEBAR_PADDING + 48, rowY);
+    const name = entry.displayName;
+    const displayLabel = name.length > 8
+      ? name.substring(0, 8) + '...'
+      : name;
+    ctx.fillText(displayLabel, x + SIDEBAR_PADDING + 48, rowY);
 
     // Lap count
     ctx.fillStyle = '#888';
