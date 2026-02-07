@@ -1,10 +1,12 @@
 import { createContext, useContext, useCallback, useRef, useMemo } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useSession } from '../hooks/useSession.js';
 import { useWebSocket, type ConnectionStatus } from '../hooks/useWebSocket.js';
 import { useGameState, type GameStoreState } from '../hooks/useGameState.js';
 import type { ServerMessage, ClientMessage } from '../../server/types.js';
 import { loadProfile, recordQualifyingResult, recordRaceResult } from '../profile.js';
+
+const ACTIVE_ROOM_KEY = 'heat-active-room';
 
 interface WebSocketContextValue {
   status: ConnectionStatus;
@@ -18,18 +20,15 @@ interface WebSocketContextValue {
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
 
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
-  const { sessionToken, setSessionToken, setActiveRoom, clearSession } = useSession();
+  const { sessionToken, setSessionToken, clearSession } = useSession();
   const { state: gameState, handleServerMessage, clearError, reset } = useGameState();
   const navigate = useNavigate();
-  const location = useLocation();
 
-  // Track latest navigate/location in refs to avoid reconnection churn
+  // Track latest navigate in a ref to avoid reconnection churn.
+  // Read current pathname from window.location instead of useLocation()
+  // to avoid re-rendering on every navigation.
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
-  const locationRef = useRef(location);
-  locationRef.current = location;
-  const setActiveRoomRef = useRef(setActiveRoom);
-  setActiveRoomRef.current = setActiveRoom;
   const clearSessionRef = useRef(clearSession);
   clearSessionRef.current = clearSession;
 
@@ -42,21 +41,25 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         break;
 
       case 'room-created':
-        setActiveRoomRef.current(message.roomCode);
+        localStorage.setItem(ACTIVE_ROOM_KEY, message.roomCode);
         navigateRef.current(`/lobby/${message.roomCode}`);
         break;
 
       case 'lobby-state':
-        setActiveRoomRef.current(message.lobby.roomCode);
+        // Persist active room to localStorage for session recovery.
+        // Write directly instead of via React state to avoid triggering
+        // re-renders in WebSocketProvider — the reducer already stores
+        // the lobby state which is the authoritative source.
+        localStorage.setItem(ACTIVE_ROOM_KEY, message.lobby.roomCode);
         // If we're on home, navigate to lobby
-        if (locationRef.current.pathname === '/') {
+        if (window.location.pathname === '/') {
           navigateRef.current(`/lobby/${message.lobby.roomCode}`);
         }
         break;
 
       case 'game-started': {
         // Navigate to game page if not already there
-        const currentPath = locationRef.current.pathname;
+        const currentPath = window.location.pathname;
         if (!currentPath.startsWith('/game/')) {
           const lobbyMatch = currentPath.match(/\/lobby\/(\w+)/);
           if (lobbyMatch) {
@@ -68,9 +71,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
       case 'phase-changed':
         // If on home page with active game, navigate to game
-        if (locationRef.current.pathname === '/') {
+        if (window.location.pathname === '/') {
           // This means we reconnected into an active game from home
-          const activeRoom = localStorage.getItem('heat-active-room');
+          const activeRoom = localStorage.getItem(ACTIVE_ROOM_KEY);
           if (activeRoom) {
             navigateRef.current(`/game/${activeRoom}`);
           }
@@ -94,7 +97,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         if (message.message === 'Invalid session token') {
           // Stale session - clear and recover
           clearSessionRef.current();
-          if (locationRef.current.pathname !== '/') {
+          if (window.location.pathname !== '/') {
             navigateRef.current('/');
           }
         }
