@@ -425,6 +425,12 @@ function executeAutomaticPhase(room: Room, registry: ConnectionRegistry): void {
   advancePhase(room, registry);
 }
 
+/** Next phase when a sequential-auto phase must be force-skipped on error. */
+const SEQUENTIAL_AUTO_NEXT_PHASE: Record<string, GamePhase> = {
+  'reveal-and-move': 'adrenaline',
+  'check-corner': 'discard',
+};
+
 /**
  * Process a sequential-automatic phase: run through all players in turn order
  * without waiting for input. Used for reveal-and-move and check-corner.
@@ -435,20 +441,32 @@ function executeSequentialAutoPhase(room: Room, registry: ConnectionRegistry): v
   // Process all players in sequence until the phase advances
   const currentPhase = state.phase;
 
-  while (state.phase === currentPhase) {
-    const playerIndex = state.activePlayerIndex;
+  try {
+    while (state.phase === currentPhase) {
+      const playerIndex = state.activePlayerIndex;
 
-    switch (currentPhase) {
-      case 'reveal-and-move':
-        state = executeRevealAndMove(state, playerIndex, room.rng!);
-        break;
+      switch (currentPhase) {
+        case 'reveal-and-move':
+          state = executeRevealAndMove(state, playerIndex, room.rng!);
+          break;
 
-      case 'check-corner':
-        state = executeCheckCorner(state, playerIndex);
-        break;
+        case 'check-corner':
+          state = executeCheckCorner(state, playerIndex);
+          break;
+      }
+
+      room.gameState = state;
     }
-
-    room.gameState = state;
+  } catch (_err) {
+    // If an auto-phase throws (e.g., executeCheckCorner), force-advance to the
+    // next phase. Without this, the game permanently soft-locks at the current
+    // phase since there's no player input to re-trigger processing, and
+    // reconnection only resends state without re-running auto phases (ht-rcak).
+    const nextPhase = SEQUENTIAL_AUTO_NEXT_PHASE[currentPhase];
+    if (nextPhase) {
+      state = room.gameState!;
+      room.gameState = { ...state, phase: nextPhase };
+    }
   }
 
   advancePhase(room, registry);
