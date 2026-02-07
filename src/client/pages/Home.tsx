@@ -164,7 +164,16 @@ export function Home() {
   // Read active room from localStorage (set by WebSocketProvider on lobby-state).
   // This is a one-time read on mount — sufficient for the "Rejoin" banner since
   // the page reloads or navigates when a room is joined.
-  const [activeRoom] = useState(() => localStorage.getItem(ACTIVE_ROOM_KEY));
+  const [activeRoom, setActiveRoom] = useState(() => localStorage.getItem(ACTIVE_ROOM_KEY));
+
+  // Clear the rejoin banner when the server reports an invalid session token.
+  // WebSocketProvider already removes the localStorage key via clearSession(),
+  // but this local state was captured on mount and needs an explicit update.
+  useEffect(() => {
+    if (gameState.error === 'Invalid session token') {
+      setActiveRoom(null);
+    }
+  }, [gameState.error]);
 
   const profile = loadProfile();
   const stats = loadStats();
