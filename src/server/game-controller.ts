@@ -209,16 +209,27 @@ function executeSimultaneousPhase(
 
   clearTurnTimer(room);
 
-  switch (state.phase) {
-    case 'gear-shift':
-      executeGearShift(room, registry);
-      break;
-    case 'play-cards':
-      executePlayCards(room, registry);
-      break;
-    case 'discard':
-      executeDiscard(room, registry);
-      break;
+  try {
+    switch (state.phase) {
+      case 'gear-shift':
+        executeGearShift(room, registry);
+        break;
+      case 'play-cards':
+        executePlayCards(room, registry);
+        break;
+      case 'discard':
+        executeDiscard(room, registry);
+        break;
+    }
+  } catch (err) {
+    // Batch processing failed (e.g., invalid gear shift slipped through).
+    // Clear stale actions and restart the phase so the turn timer can
+    // recover and players can resubmit. Without this, pendingActions
+    // retains the invalid entries, fillDefaultActions skips those players,
+    // and the game permanently soft-locks.
+    room.pendingActions.clear();
+    beginPhase(room, registry);
+    throw err;
   }
 }
 
