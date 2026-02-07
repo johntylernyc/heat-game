@@ -87,7 +87,7 @@ export function startGame(
   // Send personalized game-started to each player
   for (let i = 0; i < room.playerIds.length; i++) {
     const playerId = room.playerIds[i];
-    const clientState = partitionState(state, i);
+    const clientState = partitionState(state, i, room.playerInfo);
     registry.sendTo(playerId, {
       type: 'game-started',
       state: clientState,
@@ -569,7 +569,7 @@ function broadcastState(room: Room, registry: ConnectionRegistry): void {
     const playerId = room.playerIds[i];
     if (!isPlayerConnected(room, playerId)) continue;
 
-    const clientState = partitionState(state, i);
+    const clientState = partitionState(state, i, room.playerInfo);
     registry.sendTo(playerId, {
       type: 'phase-changed',
       phase: state.phase,
@@ -671,7 +671,7 @@ export function handleReconnection(
   const playerIndex = getPlayerIndex(room, playerId);
   if (playerIndex === -1) return;
 
-  const clientState = partitionState(room.gameState, playerIndex);
+  const clientState = partitionState(room.gameState, playerIndex, room.playerInfo);
   const timeoutMs = room.config.turnTimeoutMs > 0
     ? Math.max(0, room.config.turnTimeoutMs - (Date.now() - room.phaseStartedAt))
     : undefined;

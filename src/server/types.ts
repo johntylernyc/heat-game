@@ -312,6 +312,11 @@ export interface PrivatePlayerState {
   playedCards: Card[];
 }
 
+export interface ClientPlayerInfo {
+  displayName: string;
+  carColor: CarColor;
+}
+
 export interface ClientGameState {
   round: number;
   phase: GamePhase;
@@ -324,6 +329,8 @@ export interface ClientGameState {
   self: PrivatePlayerState;
   opponents: PublicPlayerState[];
   totalSpaces: number;
+  /** Map from player ID to display info (name + car color). */
+  playerInfo: Record<string, ClientPlayerInfo>;
 }
 
 export interface PlayerStanding {

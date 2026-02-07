@@ -100,6 +100,7 @@ export type {
   PrivatePlayerState,
   HandCard,
   ClientGameState,
+  ClientPlayerInfo,
   PlayerStanding,
   PhaseType,
 } from './types.js';

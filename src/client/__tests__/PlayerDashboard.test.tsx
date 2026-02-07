@@ -63,6 +63,7 @@ function makeGameState(
       },
     ],
     totalSpaces: 48,
+    playerInfo: {},
     ...overrides,
   };
 }

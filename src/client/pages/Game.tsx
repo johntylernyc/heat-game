@@ -3,6 +3,7 @@ import { useSession } from '../hooks/useSession.js';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 import { useGameState } from '../hooks/useGameState.js';
 import { PlayerDashboard } from '../components/PlayerDashboard.js';
+import { OpponentPanel } from '../components/OpponentPanel.js';
 import type { ServerMessage } from '../../server/types.js';
 import type { Gear } from '../../types.js';
 
@@ -178,6 +179,16 @@ export function Game() {
         {/* Board placeholder — future canvas integration */}
         <div style={styles.boardPlaceholder}>
           Track board (canvas rendering goes here)
+        </div>
+
+        {/* Opponent Info */}
+        <div style={styles.dashboardArea}>
+          <OpponentPanel
+            opponents={gs.opponents}
+            playerInfo={gs.playerInfo}
+            totalSpaces={gs.totalSpaces}
+            lapTarget={gs.lapTarget}
+          />
         </div>
 
         {/* Player Dashboard */}
