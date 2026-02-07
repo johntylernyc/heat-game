@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSession } from '../hooks/useSession.js';
 import { useWebSocketContext } from '../providers/WebSocketProvider.js';
@@ -7,6 +8,10 @@ import type { ClientGameState, QualifyingResultMessage, RaceResultMessage } from
 import type { Gear } from '../../types.js';
 import { isSlipstreamEligible } from '../../engine.js';
 import { loadStats } from '../profile.js';
+import { createGameBoard, buildCarStates, buildStandings } from '../board.js';
+import type { GameBoard } from '../board.js';
+import { PLAYER_COLORS } from '../types.js';
+import { baseGameTracks } from '../../track/tracks/index.js';
 
 const styles = {
   container: {
@@ -45,17 +50,12 @@ const styles = {
     justifyContent: 'center',
     padding: '1rem',
   },
-  boardPlaceholder: {
+  boardContainer: {
     width: '100%',
     maxWidth: '900px',
-    height: '300px',
-    background: '#16213e',
+    height: '400px',
     borderRadius: '12px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#555',
-    fontSize: '1.2rem',
+    overflow: 'hidden',
     marginBottom: '1rem',
   },
   dashboardArea: {
@@ -211,6 +211,62 @@ export function Game() {
   const qualifyingResult = gameState.qualifyingResult;
   const raceResult = gameState.raceResult;
 
+  // Board canvas refs
+  const boardContainerRef = useRef<HTMLDivElement>(null);
+  const boardRef = useRef<GameBoard | null>(null);
+
+  // Resolve track data from lobby config
+  const trackId = gameState.lobby?.config.trackId;
+  const trackData = trackId ? baseGameTracks[trackId] ?? null : null;
+
+  // Create/destroy board when track data becomes available
+  useEffect(() => {
+    const container = boardContainerRef.current;
+    if (!container || !trackData) return;
+
+    const board = createGameBoard(container, trackData);
+    boardRef.current = board;
+
+    return () => {
+      board.destroy();
+      boardRef.current = null;
+    };
+  }, [trackData]);
+
+  // Update board with game state on every change
+  useEffect(() => {
+    const board = boardRef.current;
+    if (!board || !gs) return;
+
+    const totalPlayers = 1 + gs.opponents.length;
+    const cars = buildCarStates(gs.self, gs.opponents, gs.playerIndex, totalPlayers);
+    const carStandings = buildStandings(cars);
+
+    // Slipstream indicator: show when player is eligible during slipstream phase
+    let slipstream: [number, number, string] | null = null;
+    if (gs.phase === 'slipstream') {
+      for (const opp of gs.opponents) {
+        const spacesAhead = (opp.position - gs.self.position + gs.totalSpaces) % gs.totalSpaces;
+        if (spacesAhead >= 1 && spacesAhead <= 2) {
+          slipstream = [gs.self.position, opp.position, PLAYER_COLORS[gs.playerIndex % PLAYER_COLORS.length]];
+          break;
+        }
+      }
+    }
+
+    board.update({
+      cars,
+      phase: gs.phase,
+      round: gs.round,
+      activePlayerIndex: gs.activePlayerIndex,
+      turnOrder: gs.turnOrder,
+      lapTarget: gs.lapTarget,
+      standings: carStandings,
+      myPlayerIndex: gs.playerIndex,
+      slipstream,
+    });
+  }, [gs]);
+
   const handleBackToHome = () => {
     setActiveRoom(null);
     navigate('/');
@@ -316,10 +372,8 @@ export function Game() {
         {/* Qualifying Lap Timer */}
         {isQualifying && <LapTimer gameState={gs} />}
 
-        {/* Board placeholder — future canvas integration */}
-        <div style={styles.boardPlaceholder}>
-          Track board (canvas rendering goes here)
-        </div>
+        {/* Game board canvas */}
+        <div ref={boardContainerRef} style={styles.boardContainer} />
 
         {/* Opponent Info */}
         <div style={styles.dashboardArea}>
