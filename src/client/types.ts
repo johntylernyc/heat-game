@@ -141,3 +141,37 @@ export interface PhaseDisplay {
   description: string;
   isActive: boolean;
 }
+
+/** Decorative element positioned outside the track boundary. */
+export interface SurroundElement {
+  /** Position along track perimeter (0-1). */
+  t: number;
+  /** Offset outward from track edge in world units. */
+  offset: number;
+  /** SVG path data for the silhouette. */
+  path: string;
+  /** Fill color. */
+  color: string;
+  /** Scale factor. */
+  scale: number;
+}
+
+/** Per-track visual theme — cosmetic only, no gameplay impact. */
+export interface VisualTheme {
+  /** Track country key for lookup. */
+  country: string;
+  /** Alternating kerb stripe colors [primary, secondary]. */
+  kerbColors: [string, string];
+  /** Grass/ground fill color inside and outside the track. */
+  infieldColor: string;
+  /** Accent color for signs, barriers, UI highlights. */
+  accentColor: string;
+  /** Background gradient [top, bottom]. */
+  skyGradient: [string, string];
+  /** Gravel trap color at corner exits. */
+  gravelColor: string;
+  /** Track boundary fence color. */
+  fenceColor: string;
+  /** Decorative surround elements (silhouettes). */
+  surroundElements: SurroundElement[];
+}
