@@ -215,8 +215,8 @@ export function Game() {
   const boardContainerRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<GameBoard | null>(null);
 
-  // Resolve track data from lobby config
-  const trackId = gameState.lobby?.config.trackId;
+  // Resolve track data from game state (lobby may not be populated in all flows)
+  const trackId = gs?.trackId;
   const trackData = trackId ? baseGameTracks[trackId] ?? null : null;
 
   // Create/destroy board when track data becomes available

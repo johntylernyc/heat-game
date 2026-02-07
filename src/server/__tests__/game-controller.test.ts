@@ -831,7 +831,134 @@ describe('submission-time content validation (ht-uhxf)', () => {
   });
 });
 
-// -- Qualifying Mode --
+describe('check-corner recovery (ht-rcak)', () => {
+  it('recovers when executeCheckCorner throws instead of soft-locking', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Force game to slipstream phase with player 1 as the last player.
+    // After the last slipstream, advancePhase routes to check-corner (sequential-auto).
+    // We sabotage the state so that executeCheckCorner throws.
+    room.gameState = {
+      ...room.gameState!,
+      phase: 'slipstream',
+      activePlayerIndex: 0,
+      turnOrder: [0],
+    };
+
+    // Corrupt activePlayerIndex for check-corner to force assertActivePlayer
+    // to throw. advanceSequentialPhase will transition to check-corner with
+    // turnOrder[0] = 0 as activePlayerIndex, but we set turnOrder to empty
+    // after the slipstream executes so the engine sees an inconsistency.
+    // Actually, let's use a simpler approach: set a state where the corner
+    // check encounters a null/undefined that causes a throw.
+    //
+    // Simplest: force a bad turnOrder so advanceSequentialPhase produces
+    // a state where activePlayerIndex is out-of-range, causing assertActivePlayer
+    // to fail in executeCheckCorner's while-loop iteration.
+
+    // Set player 0's position past a corner with impossible state.
+    // We'll force the state machine into check-corner with an invalid
+    // activePlayerIndex by manipulating turnOrder.
+    const state = room.gameState!;
+    room.gameState = {
+      ...state,
+      phase: 'check-corner',
+      activePlayerIndex: 99, // Invalid player index
+      turnOrder: [99],       // Force bad state
+    };
+
+    // The game is stuck at check-corner. Trigger advancePhase via reconnection
+    // path — but first, verify the direct fix: executeSequentialAutoPhase
+    // must recover. We can trigger it by routing through a slipstream action
+    // that advances to check-corner.
+
+    // Reset to slipstream so the action handler triggers the check-corner auto-phase
+    room.gameState = {
+      ...room.gameState!,
+      phase: 'slipstream',
+      activePlayerIndex: 0,
+      turnOrder: [0],
+      // Give player 0 a position that would need corner checking
+      players: state.players.map((p, i) => ({
+        ...p,
+        position: i === 0 ? 20 : 0,
+        previousPosition: 0,
+        speed: 20,
+      })),
+    };
+
+    // Sabotage: set corners to contain a malformed entry that will throw
+    // during check-corner processing (position type error)
+    room.gameState!.corners = [
+      { id: 1, speedLimit: 5, position: 10 },
+    ];
+
+    // Empty the engine zone so paying heat fails with an index error
+    room.gameState!.players = room.gameState!.players.map(p => ({
+      ...p,
+      engineZone: [],
+    }));
+
+    // Player 0 accepts slipstream, which leads to check-corner auto-phase.
+    // The corner check will attempt to debit heat from an empty engine zone,
+    // but actually that triggers the spinout path, not a throw.
+    // Let's use a more direct approach: poison the corners array.
+    room.gameState!.corners = [
+      null as any, // This will throw when accessing .position
+    ];
+
+    // The slipstream action will trigger advancePhase → executeSequentialAutoPhase
+    // → executeCheckCorner which will throw on the null corner.
+    // With the fix, it should recover to discard phase instead of throwing.
+    handleGameAction(room, 'player-0', { type: 'slipstream', accept: false }, registry);
+
+    // Game should have recovered to discard (or beyond), NOT stuck at check-corner
+    expect(room.gameState!.phase).not.toBe('check-corner');
+    expect(room.gameState!.phase).not.toBe('slipstream');
+    expect(room.status).toBe('playing');
+  });
+
+  it('recovers from check-corner error during qualifying mode', () => {
+    // Qualifying mode also routes through check-corner after react-done → skip slipstream
+    const qualConfig: RoomConfig = {
+      trackId: 'usa',
+      lapCount: 2,
+      maxPlayers: 1,
+      turnTimeoutMs: 0,
+      mode: 'qualifying',
+    };
+
+    const room = createRoom('solo-player', qualConfig, 'Solo Racer');
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Force to react phase
+    room.gameState = {
+      ...room.gameState!,
+      phase: 'react',
+      activePlayerIndex: 0,
+      turnOrder: [0],
+      players: room.gameState!.players.map(p => ({
+        ...p,
+        position: 20,
+        previousPosition: 0,
+        speed: 20,
+      })),
+    };
+
+    // Poison corners to force a throw in executeCheckCorner
+    room.gameState!.corners = [null as any];
+
+    // react-done → skips slipstream (qualifying) → check-corner → THROW → recover
+    handleGameAction(room, 'solo-player', { type: 'react-done' }, registry);
+
+    // Should NOT be stuck at check-corner
+    expect(room.gameState!.phase).not.toBe('check-corner');
+    expect(room.status).toBe('playing');
+  });
+});
 
 describe('timeout handling (ht-h9i4)', () => {
   beforeEach(() => {
