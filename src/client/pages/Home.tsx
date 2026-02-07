@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../hooks/useSession.js';
 import { useWebSocketContext } from '../providers/WebSocketProvider.js';
+import { loadProfile, loadStats, createProfile } from '../profile.js';
 
 const styles = {
   container: {
@@ -111,6 +112,41 @@ const styles = {
     margin: '0.5rem 0',
     color: '#555',
   },
+  profileBadge: {
+    position: 'absolute' as const,
+    top: '1rem',
+    right: '1.5rem',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    cursor: 'pointer',
+    background: '#1e293b',
+    borderRadius: '8px',
+    padding: '0.4rem 0.75rem',
+    border: '1px solid #334155',
+  },
+  profileName: {
+    color: '#e0e0e0',
+    fontSize: '0.85rem',
+  },
+  profileIcon: {
+    width: '24px',
+    height: '24px',
+    borderRadius: '50%',
+    background: '#ff6b35',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#fff',
+    fontSize: '0.7rem',
+    fontWeight: 'bold' as const,
+  },
+  personalBest: {
+    color: '#2ecc71',
+    fontSize: '0.85rem',
+    marginTop: '-0.5rem',
+    marginBottom: '1rem',
+  },
 } as const;
 
 const TRACKS = [
@@ -125,7 +161,10 @@ export function Home() {
   const { activeRoom } = useSession();
   const { status, send, gameState } = useWebSocketContext();
 
-  const [displayName, setDisplayName] = useState('');
+  const profile = loadProfile();
+  const stats = loadStats();
+
+  const [displayName, setDisplayName] = useState(() => profile?.displayName ?? '');
   const [joinCode, setJoinCode] = useState('');
   const [trackId, setTrackId] = useState('usa');
   const [lapCount, setLapCount] = useState(1);
@@ -150,12 +189,20 @@ export function Home() {
 
   const connected = status === 'connected';
 
+  // Auto-create profile if the user provides a name and doesn't have one yet
+  const ensureProfile = (name: string) => {
+    if (!loadProfile() && name) {
+      createProfile(name);
+    }
+  };
+
   const handleCreate = () => {
     if (!displayName.trim()) {
       setError('Enter a display name');
       return;
     }
     setError(null);
+    ensureProfile(displayName.trim());
     send({
       type: 'create-room',
       trackId,
@@ -175,6 +222,7 @@ export function Home() {
       return;
     }
     setError(null);
+    ensureProfile(displayName.trim());
     send({
       type: 'join-room',
       roomCode: joinCode.trim().toUpperCase(),
@@ -185,6 +233,7 @@ export function Home() {
   const handleQualifying = () => {
     const name = displayName.trim() || 'Solo Racer';
     setError(null);
+    ensureProfile(name);
     qualifyingPending.current = true;
     send({
       type: 'start-qualifying',
@@ -200,113 +249,132 @@ export function Home() {
     }
   };
 
+  const bestLap = stats.bestLapTimes[trackId];
+
   return (
-    <div style={styles.container}>
-      <h1 style={styles.title}>HEAT</h1>
-      <p style={styles.subtitle}>Pedal to the Metal</p>
+    <div style={{ position: 'relative' as const }}>
+      {/* Profile badge */}
+      <div style={styles.profileBadge} onClick={() => navigate('/profile')}>
+        <div style={styles.profileIcon}>
+          {profile ? profile.displayName.charAt(0).toUpperCase() : '?'}
+        </div>
+        <span style={styles.profileName}>
+          {profile ? profile.displayName : 'Set up profile'}
+        </span>
+      </div>
 
-      {!connected && (
-        <p style={{ color: '#ffaa00', marginBottom: '1rem' }}>
-          {status === 'connecting' || status === 'reconnecting' ? 'Connecting to server...' : 'Disconnected from server'}
-        </p>
-      )}
+      <div style={styles.container}>
+        <h1 style={styles.title}>HEAT</h1>
+        <p style={styles.subtitle}>Pedal to the Metal</p>
 
-      {activeRoom && (
-        <div style={styles.rejoinBanner}>
-          <p>You have an active game in room <strong>{activeRoom}</strong></p>
-          <button style={{ ...styles.button, marginTop: '0.75rem' }} onClick={handleRejoin}>
-            Rejoin Game
+        {!connected && (
+          <p style={{ color: '#ffaa00', marginBottom: '1rem' }}>
+            {status === 'connecting' || status === 'reconnecting' ? 'Connecting to server...' : 'Disconnected from server'}
+          </p>
+        )}
+
+        {activeRoom && (
+          <div style={styles.rejoinBanner}>
+            <p>You have an active game in room <strong>{activeRoom}</strong></p>
+            <button style={{ ...styles.button, marginTop: '0.75rem' }} onClick={handleRejoin}>
+              Rejoin Game
+            </button>
+          </div>
+        )}
+
+        {(error || gameState.error) && <p style={styles.error}>{error || gameState.error}</p>}
+
+        {/* Display Name */}
+        <div style={{ ...styles.card, marginBottom: '1.5rem' }}>
+          <label style={styles.label}>Display Name</label>
+          <input
+            style={styles.input}
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="Enter your name"
+            maxLength={20}
+          />
+        </div>
+
+        {/* Qualifying Laps */}
+        <div style={{ ...styles.card, borderLeft: '3px solid #ff6b35' }}>
+          <h2 style={styles.heading}>Qualifying Laps</h2>
+          <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '1rem' }}>
+            Solo practice — learn tracks and master mechanics
+          </p>
+          <label style={styles.label}>Track</label>
+          <select style={styles.select} value={trackId} onChange={(e) => setTrackId(e.target.value)}>
+            {TRACKS.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+          {bestLap !== undefined && (
+            <p style={styles.personalBest}>
+              Your best: {bestLap} round{bestLap !== 1 ? 's' : ''} per lap
+            </p>
+          )}
+          <label style={styles.label}>Laps</label>
+          <select style={styles.select} value={lapCount} onChange={(e) => setLapCount(Number(e.target.value))}>
+            {[1, 2, 3].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+          <button style={styles.button} onClick={handleQualifying} disabled={!connected}>
+            Start Qualifying
           </button>
         </div>
-      )}
 
-      {(error || gameState.error) && <p style={styles.error}>{error || gameState.error}</p>}
+        <p style={styles.divider}>or</p>
 
-      {/* Display Name */}
-      <div style={{ ...styles.card, marginBottom: '1.5rem' }}>
-        <label style={styles.label}>Display Name</label>
-        <input
-          style={styles.input}
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          placeholder="Enter your name"
-          maxLength={20}
-        />
-      </div>
-
-      {/* Qualifying Laps */}
-      <div style={{ ...styles.card, borderLeft: '3px solid #ff6b35' }}>
-        <h2 style={styles.heading}>Qualifying Laps</h2>
-        <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '1rem' }}>
-          Solo practice — learn tracks and master mechanics
-        </p>
-        <label style={styles.label}>Track</label>
-        <select style={styles.select} value={trackId} onChange={(e) => setTrackId(e.target.value)}>
-          {TRACKS.map((t) => (
-            <option key={t.id} value={t.id}>{t.name}</option>
-          ))}
-        </select>
-        <label style={styles.label}>Laps</label>
-        <select style={styles.select} value={lapCount} onChange={(e) => setLapCount(Number(e.target.value))}>
-          {[1, 2, 3].map((n) => (
-            <option key={n} value={n}>{n}</option>
-          ))}
-        </select>
-        <button style={styles.button} onClick={handleQualifying} disabled={!connected}>
-          Start Qualifying
-        </button>
-      </div>
-
-      <p style={styles.divider}>or</p>
-
-      {/* Create Game */}
-      <div style={styles.card}>
-        <h2 style={styles.heading}>Create Game</h2>
-        <label style={styles.label}>Track</label>
-        <select style={styles.select} value={trackId} onChange={(e) => setTrackId(e.target.value)}>
-          {TRACKS.map((t) => (
-            <option key={t.id} value={t.id}>{t.name}</option>
-          ))}
-        </select>
-        <div style={styles.row}>
-          <div style={{ flex: 1 }}>
-            <label style={styles.label}>Laps</label>
-            <select style={styles.select} value={lapCount} onChange={(e) => setLapCount(Number(e.target.value))}>
-              {[1, 2, 3].map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
+        {/* Create Game */}
+        <div style={styles.card}>
+          <h2 style={styles.heading}>Create Game</h2>
+          <label style={styles.label}>Track</label>
+          <select style={styles.select} value={trackId} onChange={(e) => setTrackId(e.target.value)}>
+            {TRACKS.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+          <div style={styles.row}>
+            <div style={{ flex: 1 }}>
+              <label style={styles.label}>Laps</label>
+              <select style={styles.select} value={lapCount} onChange={(e) => setLapCount(Number(e.target.value))}>
+                {[1, 2, 3].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={styles.label}>Players</label>
+              <select style={styles.select} value={maxPlayers} onChange={(e) => setMaxPlayers(Number(e.target.value))}>
+                {[2, 3, 4, 5, 6].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div style={{ flex: 1 }}>
-            <label style={styles.label}>Players</label>
-            <select style={styles.select} value={maxPlayers} onChange={(e) => setMaxPlayers(Number(e.target.value))}>
-              {[2, 3, 4, 5, 6].map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
-          </div>
+          <button style={styles.button} onClick={handleCreate} disabled={!connected}>
+            Create Game
+          </button>
         </div>
-        <button style={styles.button} onClick={handleCreate} disabled={!connected}>
-          Create Game
-        </button>
-      </div>
 
-      <p style={styles.divider}>or</p>
+        <p style={styles.divider}>or</p>
 
-      {/* Join Game */}
-      <div style={styles.card}>
-        <h2 style={styles.heading}>Join Game</h2>
-        <label style={styles.label}>Room Code</label>
-        <input
-          style={styles.input}
-          value={joinCode}
-          onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-          placeholder="e.g. ABCD"
-          maxLength={6}
-        />
-        <button style={styles.buttonSecondary} onClick={handleJoin} disabled={!connected}>
-          Join Game
-        </button>
+        {/* Join Game */}
+        <div style={styles.card}>
+          <h2 style={styles.heading}>Join Game</h2>
+          <label style={styles.label}>Room Code</label>
+          <input
+            style={styles.input}
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+            placeholder="e.g. ABCD"
+            maxLength={6}
+          />
+          <button style={styles.buttonSecondary} onClick={handleJoin} disabled={!connected}>
+            Join Game
+          </button>
+        </div>
       </div>
     </div>
   );
