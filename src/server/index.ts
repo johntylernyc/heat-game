@@ -98,6 +98,7 @@ export type {
   ErrorMessage,
   PublicPlayerState,
   PrivatePlayerState,
+  HandCard,
   ClientGameState,
   PlayerStanding,
   PhaseType,

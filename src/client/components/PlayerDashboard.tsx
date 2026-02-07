@@ -10,7 +10,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { Gear, GamePhase } from '../../types.js';
 import { CARDS_PER_GEAR, COOLDOWN_PER_GEAR } from '../../types.js';
-import { isPlayableCard } from '../../cards.js';
 import type { ClientGameState } from '../../server/types.js';
 import { PhaseIndicator } from './PhaseIndicator.js';
 import { GearSelector } from './GearSelector.js';
@@ -99,7 +98,7 @@ export function PlayerDashboard({
   const toggleCard = useCallback((index: number) => {
     if (playConfirmed) return;
     const card = self.hand[index];
-    if (!card || !isPlayableCard(card)) return;
+    if (!card || !card.playable) return;
 
     setSelectedCardIndices(prev => {
       if (prev.includes(index)) {

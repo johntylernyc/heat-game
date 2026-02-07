@@ -5,12 +5,11 @@
  * Heat cards are visually marked as unplayable.
  */
 
-import type { Card } from '../../types.js';
-import { isPlayableCard } from '../../cards.js';
+import type { HandCard } from '../../server/types.js';
 import { CardView } from './CardView.js';
 
 export interface HandDisplayProps {
-  cards: Card[];
+  cards: HandCard[];
   selectedIndices: number[];
   onToggleCard: (index: number) => void;
   disabled?: boolean;
@@ -41,7 +40,7 @@ export function HandDisplay({
   onToggleCard,
   disabled,
 }: HandDisplayProps) {
-  const playableCount = cards.filter(isPlayableCard).length;
+  const playableCount = cards.filter(c => c.playable).length;
 
   return (
     <div data-testid="hand-display">
@@ -54,7 +53,7 @@ export function HandDisplay({
             key={index}
             card={card}
             selected={selectedIndices.includes(index)}
-            disabled={disabled || !isPlayableCard(card)}
+            disabled={disabled || !card.playable}
             onClick={() => onToggleCard(index)}
           />
         ))}
