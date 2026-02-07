@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useProfile } from '../hooks/useProfile.js';
 import type { CarColor } from '../../server/types.js';
 import { CAR_COLORS } from '../../server/types.js';
-import type { GameHistoryEntry } from '../profile.js';
+import type { GameHistoryEntry } from '../profileStore.js';
 
 const TRACKS: Record<string, string> = {
   usa: 'USA',

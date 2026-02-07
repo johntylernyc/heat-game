@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWebSocketContext } from '../providers/WebSocketProvider.js';
-import { loadProfile, loadStats, createProfile } from '../profile.js';
+import { loadProfile, loadStats, createProfile } from '../profileStore.js';
 
 const ACTIVE_ROOM_KEY = 'heat-active-room';
 

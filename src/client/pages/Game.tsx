@@ -8,7 +8,7 @@ import { OpponentPanel } from '../components/OpponentPanel.js';
 import type { ClientGameState, QualifyingResultMessage, RaceResultMessage } from '../../server/types.js';
 import type { Gear } from '../../types.js';
 import { isSlipstreamEligible } from '../../engine.js';
-import { loadStats } from '../profile.js';
+import { loadStats } from '../profileStore.js';
 import { createGameBoard, buildCarStates, buildStandings } from '../board.js';
 import type { GameBoard } from '../board.js';
 import { PLAYER_COLORS } from '../types.js';

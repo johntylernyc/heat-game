@@ -10,7 +10,7 @@ import {
   recordRaceResult,
   type QualifyingResult,
   type RaceResult,
-} from '../profile.js';
+} from '../profileStore.js';
 
 beforeEach(() => {
   localStorage.clear();
