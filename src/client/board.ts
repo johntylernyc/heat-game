@@ -333,7 +333,10 @@ export function buildCarStates(
 /**
  * Build standings from car states, sorted by lap count then position.
  */
-export function buildStandings(cars: CarState[]): StandingEntry[] {
+export function buildStandings(
+  cars: CarState[],
+  playerInfo?: Record<string, { displayName: string }>,
+): StandingEntry[] {
   const sorted = [...cars].sort((a, b) => {
     if (b.lapCount !== a.lapCount) return b.lapCount - a.lapCount;
     return b.position - a.position;
@@ -342,6 +345,7 @@ export function buildStandings(cars: CarState[]): StandingEntry[] {
   return sorted.map((car, i) => ({
     rank: i + 1,
     playerId: car.playerId,
+    displayName: playerInfo?.[car.playerId]?.displayName ?? car.playerId,
     color: car.color,
     lapCount: car.lapCount,
     position: car.position,
