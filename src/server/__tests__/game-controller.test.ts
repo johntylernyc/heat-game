@@ -815,3 +815,99 @@ describe('submission-time content validation (ht-uhxf)', () => {
     expect(room.pendingActions.has(0)).toBe(true);
   });
 });
+
+// -- Qualifying Mode --
+
+describe('qualifying mode', () => {
+  const qualifyingConfig: RoomConfig = {
+    trackId: 'usa',
+    lapCount: 1,
+    maxPlayers: 1,
+    turnTimeoutMs: 0,
+    mode: 'qualifying',
+  };
+
+  function createQualifyingRoom(): Room {
+    return createRoom('solo-player', qualifyingConfig, 'Solo Racer');
+  }
+
+  it('starts a qualifying game with 1 player', () => {
+    const room = createQualifyingRoom();
+    const { registry, connections } = createMockRegistry(room);
+
+    startGame(room, registry);
+
+    expect(room.gameState).not.toBeNull();
+    expect(room.gameState!.mode).toBe('qualifying');
+    expect(room.gameState!.raceStatus).toBe('qualifying');
+    expect(room.gameState!.players).toHaveLength(1);
+
+    // Player should have received game-started
+    const conn = connections.get('solo-player')!;
+    const startedMsgs = getMessagesByType(conn, 'game-started');
+    expect(startedMsgs.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('skips adrenaline and slipstream in qualifying mode', () => {
+    const room = createQualifyingRoom();
+    const { registry, connections } = createMockRegistry(room);
+
+    startGame(room, registry);
+
+    const conn = connections.get('solo-player')!;
+
+    // Phase 1: Gear shift
+    handleGameAction(room, 'solo-player', {
+      type: 'gear-shift',
+      targetGear: 1,
+    }, registry);
+
+    // Phase 2: Play cards (need to pick valid cards)
+    const player = room.gameState!.players[0];
+    const playableIdx = player.hand.findIndex(c =>
+      c.type === 'speed' || (c.type === 'upgrade' && c.subtype !== 'starting-heat'),
+    );
+    handleGameAction(room, 'solo-player', {
+      type: 'play-cards',
+      cardIndices: [playableIdx],
+    }, registry);
+
+    // After reveal-and-move (auto) and adrenaline (should be skipped),
+    // we should be at react phase
+    expect(room.gameState!.phase).toBe('react');
+
+    // React: skip
+    handleGameAction(room, 'solo-player', { type: 'react-done' }, registry);
+
+    // After react, slipstream should be skipped, goes to check-corner (auto),
+    // then discard
+    expect(room.gameState!.phase).toBe('discard');
+
+    // Discard: skip
+    handleGameAction(room, 'solo-player', {
+      type: 'discard',
+      cardIndices: [],
+    }, registry);
+
+    // After discard → replenish (auto) → gear-shift (round 2)
+    expect(room.gameState!.phase).toBe('gear-shift');
+    expect(room.gameState!.round).toBe(2);
+
+    // Never saw adrenaline or slipstream phases in broadcast messages
+    const phaseChanges = getMessagesByType(conn, 'phase-changed') as Array<{ phase: string }>;
+    const phasesSeenByPlayer = phaseChanges.map(m => m.phase);
+    expect(phasesSeenByPlayer).not.toContain('adrenaline');
+    expect(phasesSeenByPlayer).not.toContain('slipstream');
+  });
+
+  it('includes mode in client game state', () => {
+    const room = createQualifyingRoom();
+    const { registry, connections } = createMockRegistry(room);
+
+    startGame(room, registry);
+
+    const conn = connections.get('solo-player')!;
+    const startedMsg = getMessagesByType(conn, 'game-started')[0] as { state: { mode: string } };
+    expect(startedMsg.state.mode).toBe('qualifying');
+  });
+});

@@ -9,7 +9,7 @@
  */
 
 import type { TrackData } from './track/types.js';
-import type { GameState, CornerDef, WeatherToken, RoadConditionPlacement } from './types.js';
+import type { GameMode, GameState, CornerDef, WeatherToken, RoadConditionPlacement } from './types.js';
 import { createRng, shuffle } from './deck.js';
 import { type GameConfig, initGame } from './engine.js';
 import { getWeatherStressCount, applyWeatherToPlayer } from './weather/weather.js';
@@ -36,6 +36,8 @@ export interface RaceSetupConfig {
   useRoadConditions?: boolean;
   /** Pre-determined road condition placements (overrides useRoadConditions). */
   roadConditions?: RoadConditionPlacement[];
+  /** Game mode: 'race' (default) or 'qualifying' for solo play. */
+  mode?: GameMode;
 }
 
 export type GridOrder =
@@ -65,9 +67,11 @@ export function setupRace(config: RaceSetupConfig): GameState {
   const { playerIds, track, seed } = config;
   const laps = config.laps ?? track.defaultConfig.laps;
   let stressCount = config.stressCount ?? track.defaultConfig.startingStress;
+  const mode = config.mode ?? 'race';
+  const minPlayers = mode === 'qualifying' ? 1 : 2;
 
-  if (playerIds.length < 2) {
-    throw new Error('Need at least 2 players');
+  if (playerIds.length < minPlayers) {
+    throw new Error(`Need at least ${minPlayers} players`);
   }
 
   if (playerIds.length > track.startingGrid.length) {
@@ -112,6 +116,7 @@ export function setupRace(config: RaceSetupConfig): GameState {
     startFinishLine: track.startFinishLine,
     trackId: track.id,
     startingPositions,
+    mode,
   };
 
   let state = initGame(gameConfig);

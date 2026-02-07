@@ -1131,3 +1131,116 @@ describe('Full Round Cycle', () => {
     }
   });
 });
+
+// -- Qualifying Mode --
+
+describe('qualifying mode', () => {
+  const qualifyingConfig: GameConfig = {
+    playerIds: ['solo'],
+    lapTarget: 1,
+    stressCount: 3,
+    seed: 42,
+    totalSpaces: 20,
+    corners: [],
+    mode: 'qualifying',
+  };
+
+  it('allows 1 player in qualifying mode', () => {
+    const state = initGame(qualifyingConfig);
+    expect(state.players).toHaveLength(1);
+    expect(state.mode).toBe('qualifying');
+    expect(state.raceStatus).toBe('qualifying');
+  });
+
+  it('still rejects 0 players in qualifying mode', () => {
+    expect(() =>
+      initGame({ ...qualifyingConfig, playerIds: [] }),
+    ).toThrow('Need at least 1 players');
+  });
+
+  it('still rejects 1 player in race mode', () => {
+    expect(() =>
+      initGame({ ...qualifyingConfig, mode: 'race' }),
+    ).toThrow('Need at least 2 players');
+  });
+
+  it('defaults to race mode when mode not specified', () => {
+    const state = initGame(defaultConfig);
+    expect(state.mode).toBe('race');
+    expect(state.raceStatus).toBe('racing');
+  });
+
+  it('initializes lapRounds as empty array', () => {
+    const state = initGame(qualifyingConfig);
+    expect(state.players[0].lapRounds).toEqual([]);
+  });
+
+  it('tracks lap completion round in lapRounds', () => {
+    // Create a state where the player has traveled enough to complete a lap
+    let state = initGame({
+      ...qualifyingConfig,
+      totalSpaces: 10,
+      lapTarget: 2,
+    });
+
+    // Manually set the player far enough to complete a lap
+    state = {
+      ...state,
+      players: [{ ...state.players[0], position: 15 }],
+      phase: 'replenish' as const,
+    };
+
+    const rng = createRng(99);
+    state = executeReplenishPhase(state, rng);
+
+    // Player should have completed 1 lap, with round 1 recorded
+    expect(state.players[0].lapCount).toBe(1);
+    expect(state.players[0].lapRounds).toEqual([1]);
+  });
+
+  it('runs a full round with 1 player through engine phases', () => {
+    let state = initGame(qualifyingConfig);
+    const rng = createRng(99);
+
+    // Phase 1: Gear shift
+    state = executeGearShiftPhase(state, [{ playerIndex: 0, targetGear: 1 }]);
+    expect(state.phase).toBe('play-cards');
+
+    // Phase 2: Play cards
+    const cardIndices = findPlayableIndices(state.players[0].hand, 1);
+    state = executePlayCardsPhase(state, [{ playerIndex: 0, cardIndices }]);
+    expect(state.phase).toBe('reveal-and-move');
+
+    // Phase 3: Reveal and move
+    state = executeRevealAndMove(state, 0, rng);
+    // With 1 player, adrenaline phase is next (controller skips it, but engine still sets it)
+    expect(state.phase).toBe('adrenaline');
+
+    // Phase 4: Adrenaline (engine still runs it — controller would skip in qualifying)
+    state = executeAdrenaline(state);
+    expect(state.phase).toBe('react');
+
+    // Phase 5: React
+    state = endReactPhase(state, 0);
+    // With 1 player, slipstream phase is next (controller skips it)
+    expect(state.phase).toBe('slipstream');
+
+    // Phase 6: Slipstream
+    state = executeSlipstream(state, { type: 'slipstream', playerIndex: 0, accept: false });
+    expect(state.phase).toBe('check-corner');
+
+    // Phase 7: Check corner
+    state = executeCheckCorner(state, 0);
+    expect(state.phase).toBe('discard');
+
+    // Phase 8: Discard
+    state = executeDiscardPhase(state, [{ playerIndex: 0, cardIndices: [] }]);
+    expect(state.phase).toBe('replenish');
+
+    // Phase 9: Replenish
+    state = executeReplenishPhase(state, rng);
+    expect(state.phase).toBe('gear-shift');
+    expect(state.round).toBe(2);
+    expect(state.raceStatus).toBe('qualifying');
+  });
+});

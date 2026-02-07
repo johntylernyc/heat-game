@@ -77,6 +77,7 @@ export function startGame(
     playerIds: room.playerIds,
     lapTarget: room.config.lapCount,
     seed,
+    mode: room.config.mode,
     // Track corners/totalSpaces will be set when track integration is added.
     // For now use defaults from engine.
   });
@@ -347,6 +348,7 @@ function executeSequentialAction(
 /**
  * After a phase completes, determine the next phase and begin it.
  * Handles automatic phases (adrenaline, replenish) without player input.
+ * In qualifying mode, skips adrenaline and slipstream (no opponents).
  */
 function advancePhase(room: Room, registry: ConnectionRegistry): void {
   const state = room.gameState!;
@@ -355,6 +357,28 @@ function advancePhase(room: Room, registry: ConnectionRegistry): void {
   if (state.raceStatus === 'finished' || state.phase === 'finished') {
     handleGameOver(room, registry);
     return;
+  }
+
+  // In qualifying mode, skip adrenaline and slipstream phases
+  if (state.mode === 'qualifying') {
+    if (state.phase === 'adrenaline') {
+      room.gameState = {
+        ...state,
+        phase: 'react',
+        activePlayerIndex: state.turnOrder[0],
+      };
+      advancePhase(room, registry);
+      return;
+    }
+    if (state.phase === 'slipstream') {
+      room.gameState = {
+        ...state,
+        phase: 'check-corner',
+        activePlayerIndex: state.turnOrder[0],
+      };
+      advancePhase(room, registry);
+      return;
+    }
   }
 
   const phaseType = getPhaseType(state.phase);

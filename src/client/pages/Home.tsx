@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../hooks/useSession.js';
 import { useWebSocketContext } from '../providers/WebSocketProvider.js';
@@ -131,6 +131,22 @@ export function Home() {
   const [lapCount, setLapCount] = useState(1);
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [error, setError] = useState<string | null>(null);
+  // Track whether we're waiting for a qualifying game to start (skip lobby)
+  const qualifyingPending = useRef(false);
+  const qualifyingRoomCode = useRef<string | null>(null);
+
+  // Navigate based on state transitions from the WebSocket provider
+  useEffect(() => {
+    const { appPhase, roomCode } = gameState;
+    if (appPhase === 'lobby' && roomCode && !qualifyingPending.current) {
+      navigate(`/lobby/${roomCode}`);
+    } else if (appPhase === 'playing' && roomCode) {
+      qualifyingPending.current = false;
+      qualifyingRoomCode.current = null;
+      navigate(`/game/${roomCode}`);
+    }
+  }, [gameState.appPhase, gameState.roomCode, navigate]);
+
 
   const connected = status === 'connected';
 
@@ -163,6 +179,18 @@ export function Home() {
       type: 'join-room',
       roomCode: joinCode.trim().toUpperCase(),
       displayName: displayName.trim(),
+    });
+  };
+
+  const handleQualifying = () => {
+    const name = displayName.trim() || 'Solo Racer';
+    setError(null);
+    qualifyingPending.current = true;
+    send({
+      type: 'start-qualifying',
+      trackId,
+      lapCount,
+      displayName: name,
     });
   };
 
@@ -205,6 +233,31 @@ export function Home() {
           maxLength={20}
         />
       </div>
+
+      {/* Qualifying Laps */}
+      <div style={{ ...styles.card, borderLeft: '3px solid #ff6b35' }}>
+        <h2 style={styles.heading}>Qualifying Laps</h2>
+        <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '1rem' }}>
+          Solo practice — learn tracks and master mechanics
+        </p>
+        <label style={styles.label}>Track</label>
+        <select style={styles.select} value={trackId} onChange={(e) => setTrackId(e.target.value)}>
+          {TRACKS.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </select>
+        <label style={styles.label}>Laps</label>
+        <select style={styles.select} value={lapCount} onChange={(e) => setLapCount(Number(e.target.value))}>
+          {[1, 2, 3].map((n) => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+        <button style={styles.button} onClick={handleQualifying} disabled={!connected}>
+          Start Qualifying
+        </button>
+      </div>
+
+      <p style={styles.divider}>or</p>
 
       {/* Create Game */}
       <div style={styles.card}>

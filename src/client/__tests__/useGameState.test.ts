@@ -10,6 +10,7 @@ const mockGameState: ClientGameState = {
   turnOrder: [0, 1],
   lapTarget: 1,
   raceStatus: 'racing',
+  mode: 'race',
   playerIndex: 0,
   self: {
     id: 'p1',
@@ -23,6 +24,7 @@ const mockGameState: ClientGameState = {
     engineZone: [],
     hasBoosted: false,
     playedCards: [],
+    lapRounds: [],
   },
   opponents: [],
   totalSpaces: 50,

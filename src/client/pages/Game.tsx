@@ -3,7 +3,7 @@ import { useSession } from '../hooks/useSession.js';
 import { useWebSocketContext } from '../providers/WebSocketProvider.js';
 import { PlayerDashboard } from '../components/PlayerDashboard.js';
 import { OpponentPanel } from '../components/OpponentPanel.js';
-import type { ServerMessage } from '../../server/types.js';
+import type { ServerMessage, ClientGameState } from '../../server/types.js';
 import type { Gear } from '../../types.js';
 import { isSlipstreamEligible } from '../../engine.js';
 
@@ -88,7 +88,54 @@ const styles = {
     fontSize: '1rem',
     fontWeight: 'bold' as const,
     cursor: 'pointer',
-    marginTop: '2rem',
+    marginTop: '1rem',
+  },
+  lapTimer: {
+    background: '#1e293b',
+    borderRadius: '8px',
+    padding: '0.75rem 1.5rem',
+    marginBottom: '1rem',
+    display: 'flex',
+    gap: '2rem',
+    alignItems: 'center',
+  },
+  lapTimerLabel: {
+    color: '#888',
+    fontSize: '0.8rem',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.05em',
+  },
+  lapTimerValue: {
+    color: '#e0e0e0',
+    fontSize: '1.1rem',
+    fontWeight: 'bold' as const,
+  },
+  lapBreakdown: {
+    background: '#16213e',
+    borderRadius: '12px',
+    padding: '1.5rem 2rem',
+    width: '100%',
+    maxWidth: '400px',
+    marginTop: '1rem',
+  },
+  lapRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '0.5rem 0',
+    borderBottom: '1px solid #1e293b',
+    color: '#ccc',
+    fontSize: '0.95rem',
+  },
+  bestLap: {
+    color: '#2ecc71',
+    fontWeight: 'bold' as const,
+  },
+  buttonRow: {
+    display: 'flex',
+    gap: '1rem',
+    marginTop: '1.5rem',
+    justifyContent: 'center',
+    flexWrap: 'wrap' as const,
   },
   standingsTable: {
     width: '100%',
@@ -133,6 +180,7 @@ export function Game() {
   const appPhase = gameState.appPhase;
   const standings = gameState.standings;
   const lobbyPlayers = gameState.lobby?.players;
+  const isQualifying = gs?.mode === 'qualifying';
 
   const handleBackToHome = () => {
     setActiveRoom(null);
@@ -149,8 +197,12 @@ export function Game() {
     return (
       <div style={styles.container}>
         <div style={styles.gameOver}>
-          <p style={styles.gameOverTitle}>Race Complete!</p>
-          {standings && standings.length > 0 ? (
+          <p style={styles.gameOverTitle}>
+            {isQualifying ? 'Qualifying Complete!' : 'Race Complete!'}
+          </p>
+          {isQualifying && gs ? (
+            <QualifyingResults gameState={gs} />
+          ) : standings && standings.length > 0 ? (
             <table style={styles.standingsTable}>
               <thead>
                 <tr>
@@ -174,9 +226,11 @@ export function Game() {
               No standings data available.
             </p>
           )}
-          <button style={styles.backButton} onClick={handleBackToHome}>
-            Back to Home
-          </button>
+          <div style={styles.buttonRow}>
+            <button style={styles.backButton} onClick={handleBackToHome}>
+              Back to Home
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -187,7 +241,9 @@ export function Game() {
     return (
       <div style={styles.container}>
         <div style={styles.topBar}>
-          <span style={styles.roomLabel}>{roomCode}</span>
+          <span style={styles.roomLabel}>
+            {isQualifying ? 'QUALIFYING' : roomCode}
+          </span>
           <span>
             <span style={styles.connectionDot(connected)} />
             {connected ? 'Connected' : 'Reconnecting...'}
@@ -209,7 +265,9 @@ export function Game() {
     <div style={styles.container}>
       {/* Top Bar */}
       <div style={styles.topBar}>
-        <span style={styles.roomLabel}>{roomCode}</span>
+        <span style={styles.roomLabel}>
+          {isQualifying ? 'QUALIFYING' : roomCode}
+        </span>
         <span style={{ color: '#aaa', fontSize: '0.85rem' }}>
           Round {gs.round} &middot; {gs.phase.replace(/-/g, ' ')}
         </span>
@@ -221,6 +279,9 @@ export function Game() {
 
       {/* Game Area */}
       <div style={styles.gameArea}>
+        {/* Qualifying Lap Timer */}
+        {isQualifying && <LapTimer gameState={gs} />}
+
         {/* Board placeholder — future canvas integration */}
         <div style={styles.boardPlaceholder}>
           Track board (canvas rendering goes here)
@@ -256,6 +317,70 @@ export function Game() {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Lap timer panel for qualifying mode. */
+function LapTimer({ gameState: gs }: { gameState: ClientGameState }) {
+  const { self, lapTarget, round } = gs;
+  const currentLapRounds = round - (self.lapRounds.length > 0 ? self.lapRounds[self.lapRounds.length - 1] : 0);
+  const bestLap = self.lapRounds.length > 0
+    ? Math.min(...self.lapRounds.map((r, i) => r - (i > 0 ? self.lapRounds[i - 1] : 0)))
+    : null;
+
+  return (
+    <div style={styles.lapTimer}>
+      <div>
+        <div style={styles.lapTimerLabel}>Lap</div>
+        <div style={styles.lapTimerValue}>
+          {Math.min(self.lapCount + 1, lapTarget)} / {lapTarget}
+        </div>
+      </div>
+      <div>
+        <div style={styles.lapTimerLabel}>Current</div>
+        <div style={styles.lapTimerValue}>{currentLapRounds} rnd{currentLapRounds !== 1 ? 's' : ''}</div>
+      </div>
+      {bestLap !== null && (
+        <div>
+          <div style={styles.lapTimerLabel}>Best</div>
+          <div style={{ ...styles.lapTimerValue, color: '#2ecc71' }}>
+            {bestLap} rnd{bestLap !== 1 ? 's' : ''}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Qualifying results with per-lap breakdown. */
+function QualifyingResults({ gameState: gs }: { gameState: ClientGameState }) {
+  const { self } = gs;
+  const lapTimes = self.lapRounds.map((r, i) => r - (i > 0 ? self.lapRounds[i - 1] : 0));
+  const bestIdx = lapTimes.length > 0 ? lapTimes.indexOf(Math.min(...lapTimes)) : -1;
+  const totalRounds = self.lapRounds.length > 0 ? self.lapRounds[self.lapRounds.length - 1] : 0;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <p style={{ color: '#aaa', marginBottom: '0.5rem' }}>
+        {self.lapCount} lap{self.lapCount !== 1 ? 's' : ''} in {totalRounds} round{totalRounds !== 1 ? 's' : ''}
+      </p>
+      {lapTimes.length > 0 && (
+        <div style={styles.lapBreakdown}>
+          <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Lap Breakdown
+          </p>
+          {lapTimes.map((time, i) => (
+            <div key={i} style={styles.lapRow}>
+              <span>Lap {i + 1}</span>
+              <span style={i === bestIdx ? styles.bestLap : undefined}>
+                {time} round{time !== 1 ? 's' : ''}
+                {i === bestIdx && lapTimes.length > 1 ? ' (best)' : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
