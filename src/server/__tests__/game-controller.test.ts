@@ -118,6 +118,21 @@ describe('startGame', () => {
     }
   });
 
+  it('passes track config to engine state', () => {
+    const room = createTestRoom(2);
+    const { registry } = createMockRegistry(room);
+
+    startGame(room, registry);
+
+    const state = room.gameState!;
+    // USA track: 48 spaces, 3 corners, start/finish at 0
+    expect(state.totalSpaces).toBe(48);
+    expect(state.startFinishLine).toBe(0);
+    expect(state.trackId).toBe('usa');
+    expect(state.corners).toHaveLength(3);
+    expect(state.corners[0]).toEqual({ id: 1, speedLimit: 5, position: 16 });
+  });
+
   it('also sends phase-changed for the first phase', () => {
     const room = createTestRoom(2);
     const { registry, connections } = createMockRegistry(room);
