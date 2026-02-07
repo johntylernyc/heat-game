@@ -85,6 +85,7 @@ export function partitionState(
     self,
     opponents,
     totalSpaces: state.totalSpaces,
+    trackId: state.trackId,
     playerInfo: infoRecord,
   };
 }

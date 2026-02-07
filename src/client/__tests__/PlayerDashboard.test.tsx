@@ -65,6 +65,7 @@ function makeGameState(
       },
     ],
     totalSpaces: 48,
+    trackId: 'usa',
     playerInfo: {},
     ...overrides,
   };

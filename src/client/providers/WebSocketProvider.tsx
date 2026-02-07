@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, useRef } from 'react';
+import { createContext, useContext, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSession } from '../hooks/useSession.js';
 import { useWebSocket, type ConnectionStatus } from '../hooks/useWebSocket.js';
@@ -107,8 +107,13 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     onMessage,
   });
 
+  const contextValue = useMemo(
+    () => ({ status, send, disconnect, gameState, clearError, reset }),
+    [status, send, disconnect, gameState, clearError, reset],
+  );
+
   return (
-    <WebSocketContext.Provider value={{ status, send, disconnect, gameState, clearError, reset }}>
+    <WebSocketContext.Provider value={contextValue}>
       {children}
     </WebSocketContext.Provider>
   );

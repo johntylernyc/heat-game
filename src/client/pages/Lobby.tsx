@@ -161,13 +161,6 @@ export function Lobby() {
 
   const lobby = gameState.lobby;
 
-  // Set active room from URL params
-  useEffect(() => {
-    if (roomCode) {
-      setActiveRoom(roomCode);
-    }
-  }, [roomCode, setActiveRoom]);
-
   // Lobby timeout: if connected but no lobby state after LOBBY_TIMEOUT_MS, show error
   useEffect(() => {
     if (lobby || status !== 'connected') {
