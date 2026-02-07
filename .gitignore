@@ -4,3 +4,7 @@
 .beads/
 node_modules/
 dist/
+.vscode/
+.idea/
+*.swp
+*.swo
