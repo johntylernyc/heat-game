@@ -5,6 +5,7 @@ import { useGameState } from '../hooks/useGameState.js';
 import { PlayerDashboard } from '../components/PlayerDashboard.js';
 import type { ServerMessage } from '../../server/types.js';
 import type { Gear } from '../../types.js';
+import { isSlipstreamEligible } from '../../engine.js';
 
 const styles = {
   container: {
@@ -185,7 +186,11 @@ export function Game() {
           <PlayerDashboard
             gameState={gs}
             validGearTargets={computeValidGearTargets(gs.self.gear)}
-            slipstreamEligible={false}
+            slipstreamEligible={isSlipstreamEligible(
+              gs.self.position,
+              gs.opponents.map(opp => opp.position),
+              gs.totalSpaces,
+            )}
             onGearShift={(targetGear: Gear) => send({ type: 'gear-shift', targetGear })}
             onPlayCards={(cardIndices: number[]) => send({ type: 'play-cards', cardIndices })}
             onCooldown={(heatIndices: number[]) => send({ type: 'react-cooldown', heatIndices })}
