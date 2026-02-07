@@ -7,6 +7,7 @@
 
 import type {
   Card,
+  GameMode,
   GamePhase,
   GameState,
   Gear,
@@ -40,6 +41,8 @@ export interface RoomConfig {
   turnTimeoutMs: number;
   /** RNG seed for deterministic game replay. Auto-generated if not provided. */
   seed?: number;
+  /** Game mode: 'race' (default) or 'qualifying' (solo). */
+  mode?: GameMode;
 }
 
 export interface LobbyPlayer {
@@ -97,6 +100,8 @@ export interface CreateRoomMessage {
   maxPlayers: number;
   turnTimeoutMs?: number;
   displayName: string;
+  /** Game mode: 'qualifying' for solo play. */
+  mode?: GameMode;
 }
 
 export interface JoinRoomMessage {
@@ -320,10 +325,14 @@ export interface ClientGameState {
   turnOrder: number[];
   lapTarget: number;
   raceStatus: RaceStatus;
+  /** Game mode: 'race' or 'qualifying'. */
+  mode: GameMode;
   playerIndex: number;
   self: PrivatePlayerState;
   opponents: PublicPlayerState[];
   totalSpaces: number;
+  /** Lap times in rounds (qualifying mode only). */
+  lapTimes?: number[];
 }
 
 export interface PlayerStanding {

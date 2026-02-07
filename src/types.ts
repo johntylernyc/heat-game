@@ -106,6 +106,10 @@ export type GamePhase =
 
 export type RaceStatus = 'setup' | 'racing' | 'final-round' | 'finished';
 
+// -- Game Mode --
+
+export type GameMode = 'race' | 'qualifying';
+
 // -- Game State --
 
 export interface GameState {
@@ -116,6 +120,8 @@ export interface GameState {
   turnOrder: number[];
   lapTarget: number;
   raceStatus: RaceStatus;
+  /** Game mode: 'race' (default multiplayer) or 'qualifying' (solo). */
+  mode: GameMode;
   /** Track corner definitions for corner speed checks. */
   corners: CornerDef[];
   /** Total number of spaces on the track loop. */
@@ -128,6 +134,10 @@ export interface GameState {
   weather?: WeatherToken;
   /** Road conditions placed at corners (undefined = no road conditions). */
   roadConditions?: RoadConditionPlacement[];
+  /** Lap times in rounds (qualifying mode). */
+  lapTimes?: number[];
+  /** Round when the current lap started (qualifying mode). */
+  lapStartRound?: number;
 }
 
 // -- Weather --

@@ -142,10 +142,12 @@ export function allPlayersDisconnected(room: Room): boolean {
 
 /**
  * Check if enough players have joined and all are ready to start the game.
- * Requires at least 2 players and all players marked ready.
+ * Requires at least 2 players (or 1 in qualifying mode) and all players marked ready.
  */
 export function canStartGame(room: Room): boolean {
-  if (room.status !== 'waiting' || room.playerIds.length < 2) return false;
+  if (room.status !== 'waiting') return false;
+  const minPlayers = room.config.mode === 'qualifying' ? 1 : 2;
+  if (room.playerIds.length < minPlayers) return false;
   return allPlayersReady(room);
 }
 

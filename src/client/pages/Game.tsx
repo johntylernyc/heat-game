@@ -121,6 +121,57 @@ export function Game() {
 
   // Game over screen
   if (appPhase === 'finished') {
+    const isQualifying = gs?.mode === 'qualifying';
+
+    if (isQualifying && gs) {
+      const lapTimes = gs.lapTimes ?? [];
+      const totalTime = lapTimes.reduce((a, b) => a + b, 0);
+      const bestLap = lapTimes.length > 0 ? Math.min(...lapTimes) : 0;
+
+      return (
+        <div style={styles.container}>
+          <div style={styles.gameOver}>
+            <p style={styles.gameOverTitle}>Qualifying Complete!</p>
+            <div style={{ color: '#e0e0e0', marginBottom: '1.5rem' }}>
+              <h3 style={{ color: '#ff6b35', marginBottom: '0.75rem' }}>Lap Times</h3>
+              {lapTimes.map((time, i) => (
+                <p key={i} style={{
+                  padding: '0.5rem 1rem',
+                  marginBottom: '0.25rem',
+                  background: time === bestLap ? 'rgba(255, 107, 53, 0.2)' : 'transparent',
+                  borderRadius: '4px',
+                  color: time === bestLap ? '#ff6b35' : '#aaa',
+                }}>
+                  Lap {i + 1}: {time} round{time !== 1 ? 's' : ''}
+                  {time === bestLap && lapTimes.length > 1 ? ' (Best)' : ''}
+                </p>
+              ))}
+              <p style={{ marginTop: '1rem', fontWeight: 'bold', fontSize: '1.1rem' }}>
+                Total: {totalTime} rounds
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button style={styles.backButton} onClick={() => {
+                setActiveRoom(null);
+                navigate('/qualifying');
+              }}>
+                Run Again
+              </button>
+              <button style={{ ...styles.backButton, background: '#334155' }} onClick={() => {
+                setActiveRoom(null);
+                navigate('/qualifying');
+              }}>
+                Try Another Track
+              </button>
+              <button style={{ ...styles.backButton, background: '#16a34a' }} onClick={handleBackToHome}>
+                Race Online
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div style={styles.container}>
         <div style={styles.gameOver}>
@@ -159,11 +210,15 @@ export function Game() {
     );
   }
 
+  const isQualifying = gs.mode === 'qualifying';
+
   return (
     <div style={styles.container}>
       {/* Top Bar */}
       <div style={styles.topBar}>
-        <span style={styles.roomLabel}>{roomCode}</span>
+        <span style={styles.roomLabel}>
+          {isQualifying ? 'QUALIFYING' : roomCode}
+        </span>
         <span style={{ color: '#aaa', fontSize: '0.85rem' }}>
           Round {gs.round} &middot; {gs.phase.replace(/-/g, ' ')}
         </span>
@@ -175,9 +230,50 @@ export function Game() {
 
       {/* Game Area */}
       <div style={styles.gameArea}>
-        {/* Board placeholder — future canvas integration */}
-        <div style={styles.boardPlaceholder}>
-          Track board (canvas rendering goes here)
+        <div style={{ display: 'flex', width: '100%', maxWidth: '1100px', gap: '1rem' }}>
+          {/* Board placeholder — future canvas integration */}
+          <div style={{ ...styles.boardPlaceholder, flex: 1 }}>
+            Track board (canvas rendering goes here)
+          </div>
+
+          {/* Qualifying: Lap Timer Panel (replaces standings sidebar) */}
+          {isQualifying && (
+            <div style={{
+              width: '200px',
+              background: '#16213e',
+              borderRadius: '12px',
+              padding: '1rem',
+              color: '#e0e0e0',
+              fontSize: '0.9rem',
+            }}>
+              <h3 style={{ color: '#ff6b35', marginBottom: '0.75rem', fontSize: '1rem' }}>Lap Timer</h3>
+              <p style={{ marginBottom: '0.5rem' }}>
+                Lap {gs.self.lapCount + 1} / {gs.lapTarget}
+              </p>
+              <p style={{ color: '#aaa', marginBottom: '0.75rem' }}>
+                Round {gs.round}
+              </p>
+              {gs.lapTimes && gs.lapTimes.length > 0 && (
+                <>
+                  <hr style={{ border: 'none', borderTop: '1px solid #334155', margin: '0.5rem 0' }} />
+                  <p style={{ color: '#aaa', fontSize: '0.8rem', marginBottom: '0.25rem' }}>Completed:</p>
+                  {gs.lapTimes.map((time, i) => (
+                    <p key={i} style={{
+                      color: time === Math.min(...gs.lapTimes!) ? '#ff6b35' : '#888',
+                      fontSize: '0.85rem',
+                    }}>
+                      L{i + 1}: {time} rnd{time !== 1 ? 's' : ''}
+                    </p>
+                  ))}
+                  {gs.lapTimes.length > 1 && (
+                    <p style={{ color: '#ff6b35', marginTop: '0.5rem', fontWeight: 'bold' }}>
+                      Best: {Math.min(...gs.lapTimes)} rnds
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Player Dashboard */}

@@ -18,6 +18,7 @@
 import type {
   Card,
   CornerDef,
+  GameMode,
   GameState,
   GamePhase,
   Gear,
@@ -51,6 +52,8 @@ export interface GameConfig {
   trackId?: string;
   /** Starting positions per player (index 0 = first player, etc.) */
   startingPositions?: number[];
+  /** Game mode: 'race' (default) or 'qualifying' (solo). */
+  mode?: GameMode;
 }
 
 /**
@@ -59,10 +62,12 @@ export interface GameConfig {
  */
 export function initGame(config: GameConfig): GameState {
   const { playerIds, lapTarget, seed } = config;
+  const mode = config.mode ?? 'race';
   const stressCount = config.stressCount ?? DEFAULT_STRESS_COUNT;
 
-  if (playerIds.length < 2) {
-    throw new Error('Need at least 2 players');
+  const minPlayers = mode === 'qualifying' ? 1 : 2;
+  if (playerIds.length < minPlayers) {
+    throw new Error(`Need at least ${minPlayers} players`);
   }
 
   const rng = createRng(seed);
@@ -104,10 +109,12 @@ export function initGame(config: GameConfig): GameState {
     turnOrder,
     lapTarget,
     raceStatus: 'racing',
+    mode,
     corners: config.corners ?? [],
     totalSpaces: config.totalSpaces ?? 100,
     startFinishLine: config.startFinishLine ?? 0,
     trackId: config.trackId ?? '',
+    ...(mode === 'qualifying' ? { lapTimes: [], lapStartRound: 1 } : {}),
   };
 }
 
@@ -320,15 +327,37 @@ export function executeRevealAndMove(
   );
 }
 
+// -- Phase Skipping (qualifying mode) --
+
+/**
+ * Check if a phase should be skipped in qualifying mode.
+ * Adrenaline and slipstream have no effect with 1 player.
+ */
+export function shouldSkipPhase(state: GameState, phase: GamePhase): boolean {
+  if (state.mode !== 'qualifying') return false;
+  return phase === 'adrenaline' || phase === 'slipstream';
+}
+
 // -- Phase 4: Adrenaline (automatic/conditional) --
 
 /**
  * Adrenaline phase: last-place player (or last 2 in 5+ players)
  * gains +1 speed and +1 cooldown bonus.
  * Transitions to 'react'.
+ *
+ * In qualifying mode, skips entirely (no opponents = no relative positions).
  */
 export function executeAdrenaline(state: GameState): GameState {
   assertPhase(state, 'adrenaline');
+
+  // Skip in qualifying mode — no opponents to compare against
+  if (state.mode === 'qualifying') {
+    return {
+      ...state,
+      phase: 'react',
+      activePlayerIndex: state.turnOrder[0],
+    };
+  }
 
   const playerCount = state.players.length;
   let players = [...state.players];
@@ -515,6 +544,8 @@ export interface SlipstreamAction {
 /**
  * Slipstream: if a car is 1-2 spaces behind another car, it may move +2 spaces.
  * The +2 does NOT affect speed for corner checks.
+ *
+ * In qualifying mode, auto-declines (no other cars to draft).
  */
 export function executeSlipstream(
   state: GameState,
@@ -522,6 +553,16 @@ export function executeSlipstream(
 ): GameState {
   assertPhase(state, 'slipstream');
   assertActivePlayer(state, action.playerIndex);
+
+  // In qualifying mode, skip slipstream — no other cars
+  if (state.mode === 'qualifying') {
+    return advanceSequentialPhase(
+      state,
+      action.playerIndex,
+      'slipstream',
+      'check-corner',
+    );
+  }
 
   const player = state.players[action.playerIndex];
   let players = state.players;
@@ -696,8 +737,22 @@ export function executeReplenishPhase(
   }
 
   // Check lap completion for all players
+  const prevLapCounts = players.map(p => p.lapCount);
   for (let i = 0; i < players.length; i++) {
     players = checkLapCompletion(players, i, state.totalSpaces);
+  }
+
+  // Track lap times in qualifying mode
+  let lapTimes = state.lapTimes ? [...state.lapTimes] : undefined;
+  let lapStartRound = state.lapStartRound;
+  if (state.mode === 'qualifying' && lapTimes !== undefined && lapStartRound !== undefined) {
+    const player = players[0];
+    if (player.lapCount > prevLapCounts[0]) {
+      // Lap just completed — record the lap time (rounds for this lap)
+      const lapTime = state.round - lapStartRound + 1;
+      lapTimes.push(lapTime);
+      lapStartRound = state.round + 1;
+    }
   }
 
   // Check if race is finished
@@ -709,6 +764,8 @@ export function executeReplenishPhase(
       players,
       phase: 'finished',
       raceStatus: 'finished',
+      lapTimes,
+      lapStartRound,
     };
   }
 
@@ -736,6 +793,8 @@ export function executeReplenishPhase(
     activePlayerIndex: turnOrder[0],
     turnOrder,
     raceStatus,
+    lapTimes,
+    lapStartRound,
   };
 }
 

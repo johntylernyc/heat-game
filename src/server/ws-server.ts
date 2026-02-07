@@ -240,11 +240,13 @@ function handleCreateRoom(
     return;
   }
 
+  const isQualifying = message.mode === 'qualifying';
   const roomConfig: RoomConfig = {
     trackId: message.trackId,
     lapCount: message.lapCount,
-    maxPlayers: Math.min(Math.max(message.maxPlayers, 2), 6),
-    turnTimeoutMs: message.turnTimeoutMs ?? config.defaultTurnTimeoutMs ?? 60000,
+    maxPlayers: isQualifying ? 1 : Math.min(Math.max(message.maxPlayers, 2), 6),
+    turnTimeoutMs: isQualifying ? 0 : (message.turnTimeoutMs ?? config.defaultTurnTimeoutMs ?? 60000),
+    mode: message.mode,
   };
 
   const room = createRoom(conn.playerId, roomConfig, message.displayName);

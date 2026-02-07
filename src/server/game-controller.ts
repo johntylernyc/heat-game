@@ -31,6 +31,7 @@ import {
   executeReplenishPhase,
   isClutteredHand,
   isSlipstreamEligible,
+  shouldSkipPhase,
 } from '../engine.js';
 import type { GearSelection, CardSelection, DiscardSelection } from '../engine.js';
 import type {
@@ -76,6 +77,7 @@ export function startGame(
     playerIds: room.playerIds,
     lapTarget: room.config.lapCount,
     seed,
+    mode: room.config.mode,
     // Track corners/totalSpaces will be set when track integration is added.
     // For now use defaults from engine.
   });
@@ -340,6 +342,12 @@ function advancePhase(room: Room, registry: ConnectionRegistry): void {
     return;
   }
 
+  // In qualifying mode, skip adrenaline and slipstream phases entirely
+  if (shouldSkipPhase(state, state.phase)) {
+    skipPhase(room, registry);
+    return;
+  }
+
   const phaseType = getPhaseType(state.phase);
 
   // Process automatic phases immediately
@@ -356,6 +364,30 @@ function advancePhase(room: Room, registry: ConnectionRegistry): void {
 
   // Begin the new phase (sends state updates and starts timers)
   beginPhase(room, registry);
+}
+
+/**
+ * Skip a phase in qualifying mode. Executes the phase engine function
+ * (which handles the no-op internally) to advance to the next phase.
+ */
+function skipPhase(room: Room, registry: ConnectionRegistry): void {
+  const state = room.gameState!;
+
+  switch (state.phase) {
+    case 'adrenaline':
+      room.gameState = executeAdrenaline(state);
+      break;
+    case 'slipstream':
+      // Auto-decline slipstream for the active player
+      room.gameState = executeSlipstream(state, {
+        type: 'slipstream',
+        playerIndex: state.activePlayerIndex,
+        accept: false,
+      });
+      break;
+  }
+
+  advancePhase(room, registry);
 }
 
 function executeAutomaticPhase(room: Room, registry: ConnectionRegistry): void {

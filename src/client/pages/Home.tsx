@@ -177,6 +177,10 @@ export function Home() {
     });
   };
 
+  const handleQualifying = () => {
+    navigate('/qualifying');
+  };
+
   const handleJoin = () => {
     if (!displayName.trim()) {
       setError('Enter a display name');
@@ -222,6 +226,19 @@ export function Home() {
       )}
 
       {error && <p style={styles.error}>{error}</p>}
+
+      {/* Qualifying Laps */}
+      <div style={styles.card}>
+        <h2 style={styles.heading}>Qualifying Laps</h2>
+        <p style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: '1rem' }}>
+          Practice solo — learn tracks and mechanics at your own pace
+        </p>
+        <button style={styles.button} onClick={handleQualifying}>
+          Qualifying Laps
+        </button>
+      </div>
+
+      <p style={styles.divider}>or</p>
 
       {/* Display Name */}
       <div style={{ ...styles.card, marginBottom: '1.5rem' }}>

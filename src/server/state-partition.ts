@@ -67,10 +67,12 @@ export function partitionState(
     turnOrder: state.turnOrder,
     lapTarget: state.lapTarget,
     raceStatus: state.raceStatus,
+    mode: state.mode,
     playerIndex,
     self,
     opponents,
     totalSpaces: state.totalSpaces,
+    ...(state.lapTimes ? { lapTimes: state.lapTimes } : {}),
   };
 }
 
