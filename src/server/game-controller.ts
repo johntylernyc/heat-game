@@ -149,6 +149,14 @@ export function handleGameAction(
   }
 
   const state = room.gameState;
+
+  // Silently ignore stale actions from a previous phase.
+  // This handles race conditions where a client sends an action for a phase that
+  // has already advanced (e.g., react-done arriving after phase moved to slipstream).
+  if (isStaleAction(state.phase, message)) {
+    return;
+  }
+
   const phaseType = getPhaseType(state.phase);
 
   try {
@@ -618,18 +626,46 @@ function handleGameOver(room: Room, registry: ConnectionRegistry): void {
 
 // -- Validation --
 
-function validateActionForPhase(phase: GamePhase, message: ClientMessage): void {
-  const validTypes: Record<string, string[]> = {
-    'gear-shift': ['gear-shift'],
-    'play-cards': ['play-cards'],
-    'reveal-and-move': [], // Automatic per-player, no client message needed
-    'react': ['react-cooldown', 'react-boost', 'react-done'],
-    'slipstream': ['slipstream'],
-    'check-corner': [], // Automatic per-player
-    'discard': ['discard'],
-  };
+/**
+ * All action types that are valid game actions in SOME phase.
+ * Used to distinguish stale actions (valid type, wrong phase) from
+ * genuinely unknown/malformed messages.
+ */
+const GAME_ACTION_TYPES = new Set([
+  'gear-shift', 'play-cards',
+  'react-cooldown', 'react-boost', 'react-done',
+  'slipstream', 'discard',
+]);
 
-  const allowed = validTypes[phase];
+const VALID_ACTIONS_FOR_PHASE: Record<string, string[]> = {
+  'gear-shift': ['gear-shift'],
+  'play-cards': ['play-cards'],
+  'reveal-and-move': [], // Automatic per-player, no client message needed
+  'react': ['react-cooldown', 'react-boost', 'react-done'],
+  'slipstream': ['slipstream'],
+  'check-corner': [], // Automatic per-player
+  'discard': ['discard'],
+};
+
+/**
+ * Check if a message is a stale action from a previous phase.
+ *
+ * During sequential phases, all players receive phase-changed broadcasts.
+ * Non-active players may respond before learning the phase has advanced.
+ * Their action is a known game action type but not valid for the current phase.
+ * These should be silently ignored rather than producing confusing errors.
+ */
+export function isStaleAction(phase: GamePhase, message: ClientMessage): boolean {
+  const allowed = VALID_ACTIONS_FOR_PHASE[phase];
+  if (allowed && allowed.includes(message.type)) {
+    return false; // Valid for current phase — not stale
+  }
+  // Stale if it's a known game action type but wrong phase
+  return GAME_ACTION_TYPES.has(message.type);
+}
+
+function validateActionForPhase(phase: GamePhase, message: ClientMessage): void {
+  const allowed = VALID_ACTIONS_FOR_PHASE[phase];
   if (!allowed || !allowed.includes(message.type)) {
     throw new Error(`Action '${message.type}' not valid in phase '${phase}'`);
   }

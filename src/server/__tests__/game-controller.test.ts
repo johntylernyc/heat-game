@@ -7,6 +7,7 @@ import {
   handleReconnection,
   handleDisconnection,
   getPhaseType,
+  isStaleAction,
 } from '../game-controller.js';
 import { createRoom, joinRoom, disconnectPlayer, reconnectPlayer } from '../room.js';
 
@@ -173,16 +174,21 @@ describe('simultaneous phase: gear-shift', () => {
     expect(room.gameState!.players[1].gear).toBe(1);
   });
 
-  it('rejects wrong action type for the phase', () => {
+  it('silently ignores stale action type for the phase', () => {
     const room = createTestRoom(2);
     const { registry, connections } = createMockRegistry(room);
     startGame(room, registry);
 
-    // Send play-cards during gear-shift
+    const conn = connections.get('player-0')!;
+    const msgsBefore = conn.messages.length;
+
+    // Send play-cards during gear-shift — a known game action but wrong phase
     handleGameAction(room, 'player-0', { type: 'play-cards', cardIndices: [0] }, registry);
 
-    const errors = getMessagesByType(connections.get('player-0')!, 'error');
-    expect(errors.length).toBeGreaterThan(0);
+    // Should be silently ignored (no error, no new messages)
+    const errors = getMessagesByType(conn, 'error');
+    expect(errors).toHaveLength(0);
+    expect(conn.messages.length).toBe(msgsBefore);
   });
 });
 
@@ -388,5 +394,110 @@ describe('full round flow', () => {
     // adrenaline (automatic)
     // Then stops at react (sequential-input: needs player input)
     expect(room.gameState!.phase).toBe('react');
+  });
+});
+
+describe('stale action handling', () => {
+  it('isStaleAction returns true for known action in wrong phase', () => {
+    expect(isStaleAction('slipstream', { type: 'react-done' } as any)).toBe(true);
+    expect(isStaleAction('gear-shift', { type: 'react-done' } as any)).toBe(true);
+    expect(isStaleAction('discard', { type: 'slipstream', accept: true } as any)).toBe(true);
+  });
+
+  it('isStaleAction returns false for valid action in correct phase', () => {
+    expect(isStaleAction('react', { type: 'react-done' } as any)).toBe(false);
+    expect(isStaleAction('react', { type: 'react-cooldown', heatIndices: [] } as any)).toBe(false);
+    expect(isStaleAction('slipstream', { type: 'slipstream', accept: true } as any)).toBe(false);
+    expect(isStaleAction('gear-shift', { type: 'gear-shift', targetGear: 2 } as any)).toBe(false);
+  });
+
+  it('isStaleAction returns false for unknown action types', () => {
+    // Unknown action types are NOT stale — they should still produce errors
+    expect(isStaleAction('react', { type: 'start-game' } as any)).toBe(false);
+    expect(isStaleAction('gear-shift', { type: 'leave-room' } as any)).toBe(false);
+  });
+
+  it('silently ignores stale react-done arriving during slipstream phase', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Force game to slipstream phase
+    room.gameState!.phase = 'slipstream';
+    room.gameState!.activePlayerIndex = 0;
+    room.gameState!.turnOrder = [0, 1];
+
+    const conn1 = connections.get('player-1')!;
+    const msgsBefore = conn1.messages.length;
+
+    // Player 1 sends stale react-done from previous phase
+    handleGameAction(room, 'player-1', { type: 'react-done' }, registry);
+
+    // Should be silently ignored — no error message
+    const errors = getMessagesByType(conn1, 'error');
+    expect(errors).toHaveLength(0);
+    expect(conn1.messages.length).toBe(msgsBefore);
+
+    // Phase should not have changed
+    expect(room.gameState!.phase).toBe('slipstream');
+  });
+
+  it('silently ignores stale slipstream arriving during discard phase', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Force game to discard phase
+    room.gameState!.phase = 'discard';
+
+    const conn0 = connections.get('player-0')!;
+    const msgsBefore = conn0.messages.length;
+
+    // Player 0 sends stale slipstream from previous phase
+    handleGameAction(room, 'player-0', { type: 'slipstream', accept: true }, registry);
+
+    const errors = getMessagesByType(conn0, 'error');
+    expect(errors).toHaveLength(0);
+    expect(conn0.messages.length).toBe(msgsBefore);
+    expect(room.gameState!.phase).toBe('discard');
+  });
+
+  it('silently ignores stale action during automatic phase', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Force game to adrenaline (automatic) phase
+    room.gameState!.phase = 'adrenaline';
+
+    const conn0 = connections.get('player-0')!;
+    const msgsBefore = conn0.messages.length;
+
+    // Player sends stale react-done during automatic phase
+    handleGameAction(room, 'player-0', { type: 'react-done' }, registry);
+
+    const errors = getMessagesByType(conn0, 'error');
+    expect(errors).toHaveLength(0);
+    expect(conn0.messages.length).toBe(msgsBefore);
+  });
+
+  it('silently ignores stale action during sequential-auto phase', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Force game to reveal-and-move (sequential-auto) phase
+    room.gameState!.phase = 'reveal-and-move';
+    room.gameState!.activePlayerIndex = 0;
+
+    const conn1 = connections.get('player-1')!;
+    const msgsBefore = conn1.messages.length;
+
+    // Player sends stale gear-shift during sequential-auto phase
+    handleGameAction(room, 'player-1', { type: 'gear-shift', targetGear: 2 }, registry);
+
+    const errors = getMessagesByType(conn1, 'error');
+    expect(errors).toHaveLength(0);
+    expect(conn1.messages.length).toBe(msgsBefore);
   });
 });
