@@ -26,6 +26,7 @@ const mockGameState: ClientGameState = {
   },
   opponents: [],
   totalSpaces: 50,
+  playerInfo: {},
 };
 
 describe('useGameState', () => {
