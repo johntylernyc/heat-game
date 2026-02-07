@@ -49,6 +49,7 @@ import {
 } from './room.js';
 import { isPlayableCard } from '../cards.js';
 import { shiftGear } from '../gear.js';
+import { baseGameTracks } from '../track/tracks/index.js';
 
 // -- Connection Registry --
 
@@ -73,13 +74,17 @@ export function startGame(
   const seed = room.config.seed ?? Date.now();
   room.rng = createRng(seed);
 
+  const track = baseGameTracks[room.config.trackId];
+
   const state = initGame({
     playerIds: room.playerIds,
     lapTarget: room.config.lapCount,
     seed,
     mode: room.config.mode,
-    // Track corners/totalSpaces will be set when track integration is added.
-    // For now use defaults from engine.
+    trackId: track.id,
+    totalSpaces: track.totalSpaces,
+    startFinishLine: track.startFinishLine,
+    corners: track.corners,
   });
 
   room.gameState = state;
