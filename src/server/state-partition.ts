@@ -7,13 +7,36 @@
  *   - Shared game state (round, phase, turn order, etc.)
  */
 
-import type { GameState, PlayerState } from '../types.js';
+import type { GamePhase, GameState, PlayerState } from '../types.js';
 import type {
   ClientGameState,
+  PhaseType,
   PublicPlayerState,
   PrivatePlayerState,
   PlayerStanding,
 } from './types.js';
+
+/**
+ * Simultaneous phases where we collect actions from ALL players before advancing.
+ */
+const SIMULTANEOUS_PHASES: GamePhase[] = ['gear-shift', 'play-cards', 'discard'];
+
+/**
+ * Sequential phases where one player acts at a time (requires player input).
+ */
+const SEQUENTIAL_INPUT_PHASES: GamePhase[] = ['react', 'slipstream'];
+
+/**
+ * Sequential phases that auto-process for each player (no input needed).
+ */
+const SEQUENTIAL_AUTO_PHASES: GamePhase[] = ['reveal-and-move', 'check-corner'];
+
+export function getPhaseType(phase: GamePhase): PhaseType {
+  if (SIMULTANEOUS_PHASES.includes(phase)) return 'simultaneous';
+  if (SEQUENTIAL_INPUT_PHASES.includes(phase)) return 'sequential';
+  if (SEQUENTIAL_AUTO_PHASES.includes(phase)) return 'sequential-auto';
+  return 'automatic'; // adrenaline, replenish, setup, finished
+}
 
 /**
  * Build the client-visible game state for a specific player.
@@ -38,6 +61,7 @@ export function partitionState(
   return {
     round: state.round,
     phase: state.phase,
+    phaseType: getPhaseType(state.phase),
     activePlayerIndex: state.activePlayerIndex,
     turnOrder: state.turnOrder,
     lapTarget: state.lapTarget,

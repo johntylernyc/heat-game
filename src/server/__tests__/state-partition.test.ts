@@ -99,6 +99,7 @@ describe('partitionState', () => {
 
     expect(client.round).toBe(1);
     expect(client.phase).toBe('gear-shift');
+    expect(client.phaseType).toBe('simultaneous');
     expect(client.lapTarget).toBe(2);
     expect(client.raceStatus).toBe('racing');
     expect(client.turnOrder).toHaveLength(3);

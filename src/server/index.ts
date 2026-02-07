@@ -39,13 +39,12 @@ export {
 } from './room.js';
 
 // Game controller
-export type { ConnectionRegistry, PhaseType } from './game-controller.js';
+export type { ConnectionRegistry } from './game-controller.js';
 export {
   startGame,
   handleGameAction,
   handleReconnection,
   handleDisconnection,
-  getPhaseType,
 } from './game-controller.js';
 
 // State partitioning
@@ -54,6 +53,7 @@ export {
   buildPrivateState,
   buildPublicState,
   computeStandings,
+  getPhaseType,
 } from './state-partition.js';
 
 // Types
@@ -100,6 +100,7 @@ export type {
   PrivatePlayerState,
   ClientGameState,
   PlayerStanding,
+  PhaseType,
 } from './types.js';
 
 export { CAR_COLORS } from './types.js';

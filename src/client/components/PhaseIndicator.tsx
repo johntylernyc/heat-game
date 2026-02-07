@@ -7,9 +7,11 @@
 
 import type { GamePhase, Gear, RaceStatus } from '../../types.js';
 import { CARDS_PER_GEAR } from '../../types.js';
+import type { PhaseType } from '../../server/types.js';
 
 export interface PhaseIndicatorProps {
   phase: GamePhase;
+  phaseType: PhaseType;
   gear: Gear;
   isActivePlayer: boolean;
   raceStatus: RaceStatus;
@@ -54,8 +56,12 @@ const PHASE_COLORS: Record<GamePhase, string> = {
   finished: '#94a3b8',
 };
 
-function getActionPrompt(phase: GamePhase, gear: Gear, isActive: boolean): string {
-  if (!isActive && isSequentialPhase(phase)) {
+function isSequentialType(phaseType: PhaseType): boolean {
+  return phaseType === 'sequential' || phaseType === 'sequential-auto';
+}
+
+function getActionPrompt(phase: GamePhase, phaseType: PhaseType, gear: Gear, isActive: boolean): string {
+  if (!isActive && isSequentialType(phaseType)) {
     return 'Waiting for other player...';
   }
 
@@ -85,12 +91,9 @@ function getActionPrompt(phase: GamePhase, gear: Gear, isActive: boolean): strin
   }
 }
 
-function isSequentialPhase(phase: GamePhase): boolean {
-  return ['reveal-and-move', 'react', 'slipstream', 'check-corner'].includes(phase);
-}
-
 export function PhaseIndicator({
   phase,
+  phaseType,
   gear,
   isActivePlayer,
   raceStatus,
@@ -98,8 +101,8 @@ export function PhaseIndicator({
   speed,
 }: PhaseIndicatorProps) {
   const color = PHASE_COLORS[phase];
-  const prompt = getActionPrompt(phase, gear, isActivePlayer);
-  const isWaiting = !isActivePlayer && isSequentialPhase(phase);
+  const prompt = getActionPrompt(phase, phaseType, gear, isActivePlayer);
+  const isWaiting = !isActivePlayer && isSequentialType(phaseType);
 
   return (
     <div
