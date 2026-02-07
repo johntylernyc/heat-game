@@ -4,6 +4,8 @@ import type {
   ClientGameState,
   LobbyState,
   PlayerStanding,
+  QualifyingResultMessage,
+  RaceResultMessage,
 } from '../../server/types.js';
 
 export type AppPhase = 'home' | 'lobby' | 'playing' | 'finished';
@@ -23,6 +25,10 @@ export interface GameStoreState {
   gameState: ClientGameState | null;
   /** Final standings from the server (when finished). */
   standings: PlayerStanding[] | null;
+  /** Qualifying result data from server (when finished). */
+  qualifyingResult: QualifyingResultMessage | null;
+  /** Race result data from server (when finished). */
+  raceResult: RaceResultMessage | null;
   /** Last error from server. */
   error: string | null;
 }
@@ -35,6 +41,8 @@ const initialState: GameStoreState = {
   lobby: null,
   gameState: null,
   standings: null,
+  qualifyingResult: null,
+  raceResult: null,
   error: null,
 };
 
@@ -45,6 +53,8 @@ type Action =
   | { type: 'GAME_STARTED'; state: ClientGameState }
   | { type: 'PHASE_CHANGED'; state: ClientGameState }
   | { type: 'GAME_OVER'; standings: PlayerStanding[] }
+  | { type: 'QUALIFYING_RESULT'; result: QualifyingResultMessage }
+  | { type: 'RACE_RESULT'; result: RaceResultMessage }
   | { type: 'ERROR'; message: string }
   | { type: 'CLEAR_ERROR' }
   | { type: 'RESET' };
@@ -63,6 +73,10 @@ function reducer(state: GameStoreState, action: Action): GameStoreState {
       return { ...state, gameState: action.state };
     case 'GAME_OVER':
       return { ...state, appPhase: 'finished', standings: action.standings };
+    case 'QUALIFYING_RESULT':
+      return { ...state, qualifyingResult: action.result };
+    case 'RACE_RESULT':
+      return { ...state, raceResult: action.result };
     case 'ERROR':
       return { ...state, error: action.message };
     case 'CLEAR_ERROR':
@@ -96,6 +110,12 @@ export function useGameState() {
         break;
       case 'game-over':
         dispatch({ type: 'GAME_OVER', standings: message.standings });
+        break;
+      case 'qualifying-result':
+        dispatch({ type: 'QUALIFYING_RESULT', result: message });
+        break;
+      case 'race-result':
+        dispatch({ type: 'RACE_RESULT', result: message });
         break;
       case 'error':
         dispatch({ type: 'ERROR', message: message.message });

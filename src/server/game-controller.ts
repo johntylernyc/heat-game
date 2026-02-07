@@ -633,6 +633,59 @@ function handleGameOver(room: Room, registry: ConnectionRegistry): void {
     type: 'game-over',
     standings,
   });
+
+  // Send per-player result messages for profile stats tracking
+  if (state.mode === 'qualifying') {
+    // Single player — compute lap times from lapRounds
+    const player = state.players[0];
+    const lapTimes = player.lapRounds.map((r, i) => r - (i > 0 ? player.lapRounds[i - 1] : 0));
+    const bestLap = lapTimes.length > 0 ? Math.min(...lapTimes) : 0;
+    const totalTime = player.lapRounds.length > 0 ? player.lapRounds[player.lapRounds.length - 1] : 0;
+
+    registry.sendTo(room.playerIds[0], {
+      type: 'qualifying-result',
+      trackId: state.trackId,
+      lapCount: state.lapTarget,
+      lapTimes,
+      bestLap,
+      totalTime,
+    });
+  } else {
+    // Multiplayer race — send individual result to each player
+    const points = computeRacePoints(standings.length);
+    const standingInfo = standings.map((s) => {
+      const info = room.playerInfo.get(s.playerId);
+      return {
+        profileId: s.playerId,
+        displayName: info?.displayName ?? s.playerId,
+        position: s.rank,
+      };
+    });
+
+    for (let i = 0; i < room.playerIds.length; i++) {
+      const playerId = room.playerIds[i];
+      const rank = standings.find((s) => s.playerId === playerId)?.rank ?? standings.length;
+
+      registry.sendTo(playerId, {
+        type: 'race-result',
+        trackId: state.trackId,
+        lapCount: state.lapTarget,
+        position: rank,
+        totalPlayers: standings.length,
+        points: points[rank - 1] ?? 0,
+        standings: standingInfo,
+        spinouts: 0,  // TODO: track per-player spinouts in game state
+        boostsUsed: 0, // TODO: track per-player boosts in game state
+        heatPaid: 0,   // TODO: track per-player heat paid in game state
+      });
+    }
+  }
+}
+
+/** Championship-style points: 10, 6, 4, 3, 2, 1 for positions 1-6. */
+function computeRacePoints(totalPlayers: number): number[] {
+  const table = [10, 6, 4, 3, 2, 1];
+  return Array.from({ length: totalPlayers }, (_, i) => table[i] ?? 0);
 }
 
 // -- Validation --
