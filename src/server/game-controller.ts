@@ -48,6 +48,7 @@ import {
   setRoomStatus,
 } from './room.js';
 import { isPlayableCard } from '../cards.js';
+import { getValidGearTargets } from '../gear.js';
 
 // -- Connection Registry --
 
@@ -158,6 +159,9 @@ function handleSimultaneousAction(
 
   // Validate the action matches the current phase
   validateActionForPhase(state.phase, message);
+
+  // Validate action content against game rules (catches invalid values early)
+  validateActionContent(state, playerIndex, message);
 
   // Store the action (overwrites previous if resubmitted)
   room.pendingActions.set(playerIndex, message);
@@ -632,6 +636,118 @@ export function isStaleAction(phase: GamePhase, message: ClientMessage): boolean
   }
   // Stale if it's a known game action type but wrong phase
   return GAME_ACTION_TYPES.has(message.type);
+}
+
+/**
+ * Validate gear-shift action content against game rules.
+ * Checks that targetGear is reachable from the player's current gear.
+ */
+function validateGearShiftContent(
+  state: GameState,
+  playerIndex: number,
+  message: { type: 'gear-shift'; targetGear: Gear },
+): void {
+  const player = state.players[playerIndex];
+  const validTargets = getValidGearTargets(player);
+  const isValid = validTargets.some(t => t.gear === message.targetGear);
+  if (!isValid) {
+    throw new Error(
+      `Invalid gear shift: cannot shift from gear ${player.gear} to ${message.targetGear}`,
+    );
+  }
+}
+
+/**
+ * Validate play-cards action content against game rules.
+ * Checks card count for gear, valid hand indices, and playable card types.
+ */
+function validatePlayCardsContent(
+  state: GameState,
+  playerIndex: number,
+  message: { type: 'play-cards'; cardIndices: number[] },
+): void {
+  const player = state.players[playerIndex];
+  const requiredCount = CARDS_PER_GEAR[player.gear];
+
+  // Empty submission is allowed if hand is cluttered
+  if (message.cardIndices.length === 0) {
+    if (isClutteredHand(player)) {
+      return; // Valid cluttered hand submission
+    }
+    throw new Error(
+      `Must play exactly ${requiredCount} card(s) in gear ${player.gear}`,
+    );
+  }
+
+  if (message.cardIndices.length !== requiredCount) {
+    throw new Error(
+      `Must play exactly ${requiredCount} card(s) in gear ${player.gear}, got ${message.cardIndices.length}`,
+    );
+  }
+
+  // Check for duplicate indices
+  const uniqueIndices = new Set(message.cardIndices);
+  if (uniqueIndices.size !== message.cardIndices.length) {
+    throw new Error('Duplicate card indices');
+  }
+
+  // Validate each index
+  for (const idx of message.cardIndices) {
+    if (idx < 0 || idx >= player.hand.length) {
+      throw new Error(`Invalid hand index: ${idx}`);
+    }
+    if (!isPlayableCard(player.hand[idx])) {
+      throw new Error(
+        `Card at index ${idx} (type '${player.hand[idx].type}') cannot be played`,
+      );
+    }
+  }
+}
+
+/**
+ * Validate discard action content.
+ * Checks that card indices are valid hand positions.
+ */
+function validateDiscardContent(
+  state: GameState,
+  playerIndex: number,
+  message: { type: 'discard'; cardIndices: number[] },
+): void {
+  const player = state.players[playerIndex];
+
+  const uniqueIndices = new Set(message.cardIndices);
+  if (uniqueIndices.size !== message.cardIndices.length) {
+    throw new Error('Duplicate card indices');
+  }
+
+  for (const idx of message.cardIndices) {
+    if (idx < 0 || idx >= player.hand.length) {
+      throw new Error(`Invalid hand index: ${idx}`);
+    }
+  }
+}
+
+/**
+ * Validate the content of a simultaneous action against game rules.
+ * Called at submission time so invalid actions are rejected immediately
+ * with an error sent to the offending player.
+ */
+function validateActionContent(
+  state: GameState,
+  playerIndex: number,
+  message: ClientMessage,
+): void {
+  switch (message.type) {
+    case 'gear-shift':
+      validateGearShiftContent(state, playerIndex, message);
+      break;
+    case 'play-cards':
+      validatePlayCardsContent(state, playerIndex, message);
+      break;
+    case 'discard':
+      validateDiscardContent(state, playerIndex, message);
+      break;
+  }
 }
 
 function validateActionForPhase(phase: GamePhase, message: ClientMessage): void {

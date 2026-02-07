@@ -224,6 +224,215 @@ describe('simultaneous phase: play-cards', () => {
   });
 });
 
+describe('action content validation: gear-shift', () => {
+  it('rejects gear shift beyond ±2 range', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Players start in gear 1; shifting to gear 4 is +3, which is invalid
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 4 as any }, registry);
+
+    const errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(errors.length).toBeGreaterThan(0);
+    expect(room.gameState!.phase).toBe('gear-shift'); // Phase not advanced
+  });
+
+  it('rejects ±2 shift when no Heat in engine zone', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Empty engine zone so ±2 shift costs can't be paid
+    room.gameState!.players[0].engineZone = [];
+
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 3 as any }, registry);
+
+    const errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(errors.length).toBeGreaterThan(0);
+    expect(room.gameState!.phase).toBe('gear-shift');
+  });
+
+  it('accepts valid ±1 gear shift', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Gear 1 → 2 is valid ±1
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 2 }, registry);
+
+    const errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(errors).toHaveLength(0);
+    // Action stored, waiting for player 1
+    expect(room.gameState!.phase).toBe('gear-shift');
+  });
+
+  it('sends error only to the offending player', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Player 0 submits invalid shift
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 4 as any }, registry);
+
+    // Player 0 gets the error
+    const p0Errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(p0Errors.length).toBeGreaterThan(0);
+
+    // Player 1 should NOT get an error from player 0's bad action
+    const p1Errors = getMessagesByType(connections.get('player-1')!, 'error');
+    expect(p1Errors).toHaveLength(0);
+  });
+});
+
+describe('action content validation: play-cards', () => {
+  function advanceToPlayCards(room: Room, registry: ConnectionRegistry) {
+    startGame(room, registry);
+    for (const pid of room.playerIds) {
+      handleGameAction(room, pid, { type: 'gear-shift', targetGear: 1 }, registry);
+    }
+  }
+
+  it('rejects wrong card count for gear', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    advanceToPlayCards(room, registry);
+
+    // Gear 1 requires 1 card, but we submit 2
+    const hand = room.gameState!.players[0].hand;
+    const playable = hand.map((c, i) => ({ c, i })).filter(x => x.c.type === 'speed');
+
+    handleGameAction(room, 'player-0', {
+      type: 'play-cards',
+      cardIndices: [playable[0].i, playable[1].i],
+    }, registry);
+
+    const errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(errors.length).toBeGreaterThan(0);
+    expect(room.gameState!.phase).toBe('play-cards');
+  });
+
+  it('rejects invalid hand index', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    advanceToPlayCards(room, registry);
+
+    handleGameAction(room, 'player-0', {
+      type: 'play-cards',
+      cardIndices: [99],
+    }, registry);
+
+    const errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('rejects non-playable card (heat)', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    advanceToPlayCards(room, registry);
+
+    // Put a heat card in hand
+    room.gameState!.players[0].hand[0] = { type: 'heat' };
+
+    handleGameAction(room, 'player-0', {
+      type: 'play-cards',
+      cardIndices: [0],
+    }, registry);
+
+    const errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('rejects duplicate card indices', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    advanceToPlayCards(room, registry);
+
+    // Shift both players to gear 2 to require 2 cards
+    room.gameState!.players[0].gear = 2 as any;
+
+    handleGameAction(room, 'player-0', {
+      type: 'play-cards',
+      cardIndices: [0, 0],
+    }, registry);
+
+    const errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('allows empty submission for cluttered hand', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    advanceToPlayCards(room, registry);
+
+    // Make player's hand all heat cards (not playable) — cluttered
+    room.gameState!.players[0].hand = [
+      { type: 'heat' }, { type: 'heat' }, { type: 'heat' },
+    ];
+
+    // Clear error messages from setup
+    connections.get('player-0')!.messages = [];
+
+    handleGameAction(room, 'player-0', {
+      type: 'play-cards',
+      cardIndices: [],
+    }, registry);
+
+    const errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(errors).toHaveLength(0);
+  });
+
+  it('rejects empty submission when hand is not cluttered', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    advanceToPlayCards(room, registry);
+
+    // Player has playable cards — empty submission is invalid
+    handleGameAction(room, 'player-0', {
+      type: 'play-cards',
+      cardIndices: [],
+    }, registry);
+
+    const errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe('action content validation: discard', () => {
+  it('rejects invalid discard indices', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Force to discard phase
+    room.gameState!.phase = 'discard';
+
+    handleGameAction(room, 'player-0', {
+      type: 'discard',
+      cardIndices: [99],
+    }, registry);
+
+    const errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('rejects duplicate discard indices', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    room.gameState!.phase = 'discard';
+
+    handleGameAction(room, 'player-0', {
+      type: 'discard',
+      cardIndices: [0, 0],
+    }, registry);
+
+    const errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(errors.length).toBeGreaterThan(0);
+  });
+});
+
 describe('sequential phase handling', () => {
   it('rejects actions from non-active player', () => {
     const room = createTestRoom(2);
