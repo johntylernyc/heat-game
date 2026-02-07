@@ -422,6 +422,67 @@ describe('WebSocket server', () => {
     ws.close();
   });
 
+  it('resume-session does not cause stale disconnect to trigger phase execution (ht-vlkj)', async () => {
+    // Reproduces the exact bug: player refreshes page during a game, old WS close
+    // fires after resume-session reconnects the player. Without the fix, the stale
+    // close handler disconnects the player and may trigger premature phase execution.
+    server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
+
+    const { ws: ws1, sessionToken: _token1, playerId: _pid1 } = await connectWithSession(TEST_PORT);
+    const { ws: ws2, sessionToken: token2, playerId: pid2 } = await connectWithSession(TEST_PORT);
+
+    // Create room and join
+    const createPromise = waitForMessageOfType(ws1, 'room-created');
+    send(ws1, { type: 'create-room', trackId: 'usa', lapCount: 2, maxPlayers: 4, displayName: 'Alice' });
+    const created = await createPromise;
+    if (created.type !== 'room-created') throw new Error('Expected room-created');
+
+    const joinPromise = waitForMessageOfType(ws1, 'player-joined');
+    send(ws2, { type: 'join-room', roomCode: created.roomCode, displayName: 'Bob' });
+    await joinPromise;
+    await delay(30);
+
+    // Ready up both players
+    send(ws1, { type: 'set-ready', ready: true });
+    await delay(30);
+    send(ws2, { type: 'set-ready', ready: true });
+    await delay(30);
+
+    // Start game
+    const gameStarted1 = waitForMessageOfType(ws1, 'game-started');
+    const gameStarted2 = waitForMessageOfType(ws2, 'game-started');
+    send(ws1, { type: 'start-game' });
+    await Promise.all([gameStarted1, gameStarted2]);
+    await delay(30);
+
+    // Game should be in gear-shift phase
+    const room = Array.from(server.getState().rooms.values())[0];
+    expect(room.gameState!.phase).toBe('gear-shift');
+
+    // Simulate player 2 page refresh: new WS opens, resume-session sent,
+    // THEN old WS closes. The key is that resume-session happens before close.
+    const { ws: ws2new } = await connectWithSession(TEST_PORT);
+
+    // Resume session (reconnects player under old ID)
+    const resumePromise = waitForMessageOfType(ws2new, 'session-created');
+    send(ws2new, { type: 'resume-session', sessionToken: token2 });
+    await resumePromise;
+    await delay(30);
+
+    // Now close old WS (this is the stale close event)
+    ws2.close();
+    await delay(50);
+
+    // The player should still be connected — stale close should be ignored
+    expect(room.connectedPlayerIds.has(pid2)).toBe(true);
+
+    // Phase should NOT have advanced
+    expect(room.gameState!.phase).toBe('gear-shift');
+
+    ws1.close();
+    ws2new.close();
+  });
+
   it('supports session resumption', async () => {
     server = createHeatServer({ port: TEST_PORT, defaultTurnTimeoutMs: 0 });
     const { ws: ws1, sessionToken, playerId } = await connectWithSession(TEST_PORT);

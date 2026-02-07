@@ -570,6 +570,15 @@ function handleClose(
   conn: WsConnection,
   registry: ConnectionRegistry,
 ): void {
+  // If the player already reconnected (e.g., via resume-session), the connections
+  // map will point to the NEW connection, not this one. Skip disconnect to avoid
+  // undoing the reconnection — the old WebSocket's close event fires after the
+  // new connection is already established.
+  const currentConn = state.connections.get(conn.playerId);
+  if (currentConn && currentConn !== conn) {
+    return;
+  }
+
   const roomId = conn.roomId ?? state.playerRooms.get(conn.playerId);
 
   if (roomId) {
