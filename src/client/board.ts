@@ -215,9 +215,10 @@ export function createGameBoard(
     for (const car of cars) {
       const animPos = animations.getAnimatedPosition(car.playerId, layout);
       if (animPos) {
+        const animAngle = animations.getAnimatedAngle(car.playerId, layout) ?? 0;
         renderCarAtPosition(
           ctx, animPos, car, camera,
-          car.playerId === activePlayerId, config,
+          car.playerId === activePlayerId, config, animAngle,
         );
       }
     }

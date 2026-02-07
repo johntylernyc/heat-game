@@ -15,7 +15,7 @@ import type {
   Point,
 } from './types.js';
 import { DEFAULT_BOARD_CONFIG } from './types.js';
-import { interpolateTrackPosition } from './track-layout.js';
+import { interpolateTrackPosition, interpolateTrackAngle } from './track-layout.js';
 
 /** Easing: ease-in-out cubic for natural acceleration/deceleration. */
 export function easeInOutCubic(t: number): number {
@@ -177,6 +177,29 @@ export class AnimationManager {
     const spinout = this.spinoutAnimations.get(playerId);
     if (spinout) {
       return getSpinoutAnimationPosition(spinout, layout);
+    }
+
+    return null;
+  }
+
+  /** Get the animated angle for a player, or null if not animating. */
+  getAnimatedAngle(playerId: string, layout: TrackLayout): number | null {
+    const move = this.moveAnimations.get(playerId);
+    if (move) {
+      return interpolateTrackAngle(layout, move.fromPosition, move.toPosition, easeInOutCubic(move.progress));
+    }
+
+    const spinout = this.spinoutAnimations.get(playerId);
+    if (spinout) {
+      const n = layout.spaces.length;
+      if (spinout.progress < 0.4) {
+        return layout.spaces[spinout.cornerPosition].angle;
+      }
+      const subProgress = easeOutQuad((spinout.progress - 0.4) / 0.6);
+      const slideDistance = spinout.slideBack * subProgress;
+      const backPosition = (spinout.cornerPosition - Math.round(slideDistance) + n) % n;
+      // Spinout: add rotation for visual effect
+      return layout.spaces[backPosition].angle + Math.PI * subProgress;
     }
 
     return null;
