@@ -1068,3 +1068,192 @@ These are cosmetic only — no gameplay impact, no collision, just visual flavor
 - [ ] Works on Chrome, Firefox, and Safari (latest versions)
 - [ ] Responsive on desktop (1024px+) and tablet (768px+)
 - [ ] Existing unit tests continue to pass (visual changes don't break game logic)
+
+---
+
+# Epic: Qualifying Laps — Single-Player Local Play Mode
+
+- type: epic
+- priority: 1
+- labels: epic, phase-2, frontend, backend, gameplay, testing
+
+## Description
+
+Add a single-player "Qualifying Laps" mode that lets one person run laps on any track without needing opponents. This serves two purposes: it gives developers and testers a fast way to exercise the full gameplay loop locally, and it gives players a way to learn tracks, practice heat management, and experiment with gear strategy before entering a multiplayer race.
+
+Today the game cannot be played solo. Three layers enforce a 2-player minimum:
+
+1. **`initGame()` in `engine.ts`** (line 64): `if (playerIds.length < 2) throw`
+2. **`setupRace()` in `race.ts`** (line 69): `if (playerIds.length < 2) throw`
+3. **`canStartGame()` in `room.ts`** (line 148): `room.playerIds.length < 2` returns false
+
+Qualifying mode needs all three relaxed to allow exactly 1 human player.
+
+### What "Qualifying Laps" means thematically
+
+In real motorsport, qualifying is a solo time trial — each driver runs hot laps alone to set their grid position for the race. Our qualifying mode captures this:
+
+- You're alone on the track
+- You run a set number of laps (1-3, player's choice)
+- The game tracks your best lap time (total spaces moved per lap, fewer rounds = faster)
+- You manage your heat, cards, and gears exactly like a real race — the full 9-phase loop runs
+- No opponents means no adrenaline, no slipstream, no position jockeying — just you vs. the track
+
+### Engine changes (backend)
+
+**`initGame()` / `setupRace()`:**
+- Lower the minimum player count from 2 to 1
+- Accept an optional `mode: 'race' | 'qualifying'` field on `GameConfig` and `RaceSetupConfig`
+- When `mode === 'qualifying'`, the engine permits 1 player and sets `raceStatus` to `'qualifying'` instead of `'racing'`
+
+**Phase behavior with 1 player:**
+
+| Phase | Normal (2+ players) | Qualifying (1 player) |
+|-------|---------------------|----------------------|
+| 1. Gear Shift | Simultaneous, all players | Same — player submits gear choice |
+| 2. Play Cards | Simultaneous, all players | Same — player selects cards |
+| 3. Reveal & Move | Sequential (leader first) | Same — only 1 player, trivially sequential |
+| 4. Adrenaline | Last-place player gets +1 speed/cooldown | **Skip entirely** — no relative positions |
+| 5. React | Sequential | Same — player activates cooldown/boost |
+| 6. Slipstream | Sequential, if adjacent car | **Skip entirely** — no other cars to draft |
+| 7. Check Corner | Sequential | Same — corners still enforce speed limits |
+| 8. Discard | Simultaneous | Same — player may discard |
+| 9. Replenish | Simultaneous, check laps | Same — draw to 7, check lap completion |
+
+Implementation: `executeAdrenaline()` already handles edge cases gracefully — if the "last place" player is the only player, the bonus still applies. For qualifying purity, **skip the adrenaline phase entirely** when `mode === 'qualifying'`. Similarly, `executeSlipstream()` should auto-advance (no eligible slipstream) — skip the phase or auto-decline for the solo player.
+
+Add a helper:
+
+```typescript
+function shouldSkipPhase(state: GameState, phase: GamePhase): boolean {
+  if (state.mode !== 'qualifying') return false;
+  return phase === 'adrenaline' || phase === 'slipstream';
+}
+```
+
+The `advanceSequentialPhase()` and phase transitions should check this and skip to the next phase.
+
+**Lap timing:**
+- Track a new field `lapTimes: number[]` on `PlayerState` (or on `GameState` for qualifying mode)
+- A "lap time" is the number of rounds it took to complete one lap
+- Record `lapStartRound` when a lap begins, compute `lapTime = currentRound - lapStartRound` when the lap completes
+- After all laps, compute `bestLapTime = Math.min(...lapTimes)` and `totalTime = sum(lapTimes)`
+
+**Race end in qualifying:**
+- Same as normal: after completing the configured number of laps, the qualifying session ends
+- No "final round" concept (no other players to finish) — immediately transition to `'finished'`
+
+### Room / server changes
+
+**Room creation for qualifying:**
+- Add a new room mode: `mode: 'qualifying' | 'race'` on `RoomConfig`
+- When `mode === 'qualifying'`:
+  - `maxPlayers` is forced to 1
+  - `canStartGame()` returns true when the solo player is ready (no 2-player minimum)
+  - Turn timer is disabled (no time pressure in qualifying)
+  - Room code is still generated (useful if the player wants to share their session link for spectating later)
+
+**`canStartGame()` update:**
+
+```typescript
+export function canStartGame(room: Room): boolean {
+  if (room.status !== 'waiting') return false;
+  const minPlayers = room.config.mode === 'qualifying' ? 1 : 2;
+  if (room.playerIds.length < minPlayers) return false;
+  return allPlayersReady(room);
+}
+```
+
+**Game controller:**
+- Pass `mode: 'qualifying'` through to `setupRace()` and `initGame()`
+- During qualifying, the server auto-resolves skipped phases (adrenaline, slipstream) instead of waiting for player input
+- State partition still works the same — all state is "your" state since there's only 1 player
+
+### Frontend changes
+
+**Home page — new entry point:**
+- Add a third button alongside "Create Game" and "Join Game": **"Qualifying Laps"**
+- Qualifying button is prominent and labeled for solo play: "Practice solo on any track"
+
+**Qualifying setup screen:**
+- Simplified lobby (no waiting for other players):
+  - Track selector (dropdown or visual grid of the 4 tracks with preview)
+  - Lap count selector (1, 2, or 3 laps)
+  - Car color picker
+  - "Start Qualifying" button (no ready-up needed, immediate start)
+- Can be a simplified version of the Lobby page or a dedicated `/qualifying` route
+
+**In-game qualifying HUD adjustments:**
+- Hide the standings sidebar (no opponents)
+- Hide the turn order bar (only 1 player)
+- Replace standings with a **Lap Timer panel**:
+  - Current lap number and target (e.g., "Lap 2 / 3")
+  - Rounds elapsed this lap
+  - Best lap time so far (if on lap 2+)
+  - Mini lap history (Lap 1: 4 rounds, Lap 2: 3 rounds, ...)
+- Phase banner still shows — the player still needs to know what action is required
+- Skip the "waiting for other players" state entirely — phases advance as soon as the solo player submits
+
+**Qualifying results screen:**
+- Shown after all laps complete, instead of the normal race standings
+- Display:
+  - Track name
+  - Total laps and total rounds
+  - Per-lap times (round count per lap)
+  - Best lap time highlighted
+  - "Play Again" button (restart qualifying on the same track)
+  - "Change Track" button (return to qualifying setup)
+  - "Back to Home" button
+
+### Testing value
+
+This mode is critical for development testing because:
+
+- **No coordination needed**: A developer can open one browser tab and immediately exercise the full gameplay loop — gear shifts, card play, reveal, corners, heat management, deck cycling
+- **Fast iteration**: No waiting for other players to connect or submit actions
+- **Deterministic debugging**: With one player, state transitions are fully predictable — easier to reproduce and debug issues
+- **Visual testing**: Barry (mcp-playwright) can drive a qualifying session end-to-end by:
+  1. Navigate to home page
+  2. Click "Qualifying Laps"
+  3. Select a track and start
+  4. Interact with each phase (shift gear, play cards, boost/cooldown, discard)
+  5. Complete laps and verify the results screen
+  6. Screenshot at each phase to verify visual rendering
+
+## Acceptance Criteria
+
+### Engine
+- [ ] `initGame()` accepts `playerIds` with length 1 when `mode === 'qualifying'`
+- [ ] `setupRace()` accepts a single player when `mode === 'qualifying'`
+- [ ] Adrenaline phase is skipped entirely in qualifying mode (no +1 speed/cooldown)
+- [ ] Slipstream phase is skipped entirely in qualifying mode (no other cars to draft)
+- [ ] All other phases (gear shift, play cards, reveal & move, react, check corner, discard, replenish) work correctly with 1 player
+- [ ] Corner checks still enforce speed limits and heat payment with 1 player
+- [ ] Spinout mechanics work correctly with 1 player (position reset, stress cards, gear reset)
+- [ ] Lap completion and race-end detection work with 1 player
+- [ ] Race ends immediately when the solo player completes the target laps (no "final round" delay)
+- [ ] Lap times (rounds per lap) are tracked and available in the game state
+- [ ] Existing 2+ player tests continue to pass (qualifying mode is additive, not breaking)
+
+### Room / Server
+- [ ] Room can be created with `mode: 'qualifying'` and `maxPlayers: 1`
+- [ ] `canStartGame()` returns true with 1 player in qualifying mode
+- [ ] Server auto-advances skipped phases (adrenaline, slipstream) without waiting for input
+- [ ] Turn timer is disabled in qualifying mode
+- [ ] State partition sends full state to the solo player
+
+### Frontend
+- [ ] Home page shows a "Qualifying Laps" button
+- [ ] Qualifying setup screen lets the player choose track, lap count, and car color
+- [ ] "Start Qualifying" immediately begins the session (no ready-up wait)
+- [ ] In-game HUD hides standings sidebar and turn order bar during qualifying
+- [ ] Lap Timer panel shows current lap, rounds elapsed, and best lap time
+- [ ] Phases advance immediately after the solo player submits (no "waiting for opponents" state)
+- [ ] Qualifying results screen shows per-lap times, best lap, and total time
+- [ ] "Play Again" restarts qualifying on the same track
+- [ ] "Change Track" returns to the qualifying setup screen
+
+### Integration / Testing
+- [ ] A complete qualifying session can be played end-to-end in a single browser tab: select track, run laps, see results
+- [ ] `npm run dev` supports qualifying mode with no additional setup
+- [ ] All game mechanics are exercisable in qualifying: gear shifting, card play, stress resolution, boost, cooldown, corner heat payment, spinout, deck reshuffling
