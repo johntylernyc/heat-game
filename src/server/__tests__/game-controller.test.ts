@@ -501,3 +501,137 @@ describe('stale action handling', () => {
     expect(conn1.messages.length).toBe(msgsBefore);
   });
 });
+
+describe('simultaneous phase error routing (ht-fcyn)', () => {
+  it('sends gear-shift error to the offending player, not the batch trigger', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    expect(room.gameState!.phase).toBe('gear-shift');
+
+    // Player 0 submits invalid gear shift (jump from 1 to 4 = +3, too far)
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 4 as any }, registry);
+
+    // Player 0 should get the error (their action was invalid)
+    const p0Errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(p0Errors.length).toBeGreaterThan(0);
+    expect((p0Errors[0] as any).message).toContain('gear shift');
+
+    // Player 1 should NOT get any error
+    const p1Errors = getMessagesByType(connections.get('player-1')!, 'error');
+    expect(p1Errors).toHaveLength(0);
+
+    // Phase should still be gear-shift (player 0's action was rejected)
+    expect(room.gameState!.phase).toBe('gear-shift');
+  });
+
+  it('sends play-cards error to the offending player, not the batch trigger', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Advance to play-cards
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 1 }, registry);
+    handleGameAction(room, 'player-1', { type: 'gear-shift', targetGear: 1 }, registry);
+    expect(room.gameState!.phase).toBe('play-cards');
+
+    // Clear messages from gear-shift phase
+    connections.get('player-0')!.messages = [];
+    connections.get('player-1')!.messages = [];
+
+    // Player 0 submits invalid card index (out of range)
+    handleGameAction(room, 'player-0', { type: 'play-cards', cardIndices: [99] }, registry);
+
+    // Player 0 should get the error
+    const p0Errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(p0Errors.length).toBeGreaterThan(0);
+    expect((p0Errors[0] as any).message).toContain('Invalid hand index');
+
+    // Player 1 should NOT get any error
+    const p1Errors = getMessagesByType(connections.get('player-1')!, 'error');
+    expect(p1Errors).toHaveLength(0);
+
+    // Phase should still be play-cards (player 0's action was rejected)
+    expect(room.gameState!.phase).toBe('play-cards');
+  });
+
+  it('allows offending player to resubmit after error', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Player 0 submits invalid gear shift
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 4 as any }, registry);
+    expect(room.gameState!.phase).toBe('gear-shift');
+
+    // Player 0 resubmits with valid gear
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 2 }, registry);
+
+    // Player 1 submits valid gear
+    handleGameAction(room, 'player-1', { type: 'gear-shift', targetGear: 2 }, registry);
+
+    // Should advance past gear-shift
+    expect(room.gameState!.phase).toBe('play-cards');
+  });
+
+  it('rejects invalid action without storing it in pendingActions', () => {
+    const room = createTestRoom(2);
+    const { registry } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Player 0 submits invalid gear shift
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 4 as any }, registry);
+
+    // Invalid action should NOT be stored
+    expect(room.pendingActions.has(0)).toBe(false);
+  });
+
+  it('sends discard error to the correct player', () => {
+    const room = createTestRoom(2);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Force to discard phase
+    room.gameState!.phase = 'discard';
+    room.pendingActions.clear();
+
+    connections.get('player-0')!.messages = [];
+    connections.get('player-1')!.messages = [];
+
+    // Player 0 submits invalid discard (out of range index)
+    handleGameAction(room, 'player-0', { type: 'discard', cardIndices: [99] }, registry);
+
+    // Player 0 gets the error
+    const p0Errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(p0Errors.length).toBeGreaterThan(0);
+
+    // Player 1 gets no error
+    const p1Errors = getMessagesByType(connections.get('player-1')!, 'error');
+    expect(p1Errors).toHaveLength(0);
+  });
+
+  it('does not send error to innocent last-submitter when batch would have failed', () => {
+    const room = createTestRoom(3);
+    const { registry, connections } = createMockRegistry(room);
+    startGame(room, registry);
+
+    // Player 0 submits invalid gear (error goes to player 0 immediately)
+    handleGameAction(room, 'player-0', { type: 'gear-shift', targetGear: 4 as any }, registry);
+    const p0Errors = getMessagesByType(connections.get('player-0')!, 'error');
+    expect(p0Errors.length).toBeGreaterThan(0);
+
+    // Player 1 submits valid gear
+    handleGameAction(room, 'player-1', { type: 'gear-shift', targetGear: 2 }, registry);
+
+    // Player 2 submits valid gear (would be last to trigger batch)
+    handleGameAction(room, 'player-2', { type: 'gear-shift', targetGear: 2 }, registry);
+
+    // Player 2 should NOT get any error
+    const p2Errors = getMessagesByType(connections.get('player-2')!, 'error');
+    expect(p2Errors).toHaveLength(0);
+
+    // Phase should NOT advance — player 0's action was rejected, they haven't resubmitted
+    expect(room.gameState!.phase).toBe('gear-shift');
+  });
+});
