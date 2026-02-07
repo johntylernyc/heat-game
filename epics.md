@@ -1764,3 +1764,203 @@ No new client→server message types needed for the MVP (stats are computed serv
 - [ ] All existing tests continue to pass
 - [ ] Existing multiplayer and qualifying flows work unchanged for users who haven't set up a profile
 - [ ] The app gracefully handles missing or corrupted profile data in `localStorage` (falls back to defaults)
+
+---
+
+# Epic: Interactive Tutorial & Rules Reference
+
+- type: epic
+- priority: 1
+- labels: epic, phase-4, frontend, onboarding, ux
+
+## Description
+
+Add an interactive tutorial system and always-accessible rules reference to Heat, so new players can learn the game's mechanics through guided play and experienced players can quickly look up specific rules mid-game. This is the single highest-impact feature still missing for a 1.0 launch — Heat has 9 distinct turn phases, a gear-based card play system, heat management, corner speed limits, slipstream, boost, cooldown, stress resolution, and spinout mechanics. Without structured onboarding, new players will be immediately overwhelmed.
+
+The tutorial is NOT a video or a wall of text. It is a **guided qualifying session** — a real solo game where the player drives through the rules step-by-step, with contextual prompts explaining what's happening and why. The player makes real choices (shift gear, play cards, decide on boost/cooldown) with the tutorial highlighting each mechanic as it naturally arises during gameplay.
+
+The rules reference is a separate, always-accessible panel that organizes all game rules into searchable, browsable sections. Players can open it from any screen (home, lobby, or mid-game) without disrupting their current state.
+
+### Tutorial Design Philosophy
+
+- **Learn by doing**: Every concept is taught through actual gameplay, not passive reading
+- **Progressive disclosure**: Introduce one mechanic at a time, in the order they naturally occur
+- **Non-punishing**: The tutorial track/scenario is designed so the player cannot fail catastrophically
+- **Skippable**: Experienced players can skip directly to free play
+- **Replayable**: The tutorial is always available from the home screen
+
+### Tutorial Scenario
+
+The tutorial uses a **scripted qualifying session** on a custom short tutorial track (or the first sector of the USA track). The scenario is divided into lessons that correspond to the game's phase structure:
+
+**Lesson 1: Gears & Speed Cards**
+- Player starts in 1st gear
+- Tutorial explains: gears determine how many cards you play
+- Player shifts to 2nd gear (prompted)
+- Tutorial explains: free shift = ±1 gear, paid shift = ±2 gears (costs 1 Heat)
+- Player plays 2 speed cards (prompted to select specific ones)
+- Tutorial explains: card values sum to your speed, and speed = spaces moved
+
+**Lesson 2: Movement & Track Position**
+- Cards are revealed, car moves forward on the track
+- Tutorial highlights the track, spaces, and position
+- Tutorial explains: occupied spaces push you forward (drafting)
+- Player reaches a straightaway — good time to go fast
+
+**Lesson 3: Corners & Heat**
+- Player approaches a corner with a speed limit (e.g., limit 3)
+- Tutorial warns: if your speed exceeds the limit, you pay Heat from your engine
+- Player is prompted to choose cards that exceed the limit by 1 (guided)
+- Tutorial shows Heat cards moving from Engine to discard pile
+- Tutorial explains: run out of Heat = spinout (skip next turn, lose cards)
+
+**Lesson 4: React Phase — Cooldown & Boost**
+- Player is in 2nd gear (has Cooldown 1 available)
+- Tutorial explains: Cooldown lets you move Heat from hand back to Engine
+- Player activates cooldown (prompted)
+- Next turn: player shifts to 4th gear
+- Tutorial explains: 4th gear gives Boost — pay 1 Heat from Engine, flip cards for bonus speed
+- Player activates boost (prompted)
+
+**Lesson 5: Slipstream**
+- A Legends car is placed just ahead of the player
+- Player ends movement within 2 spaces of the Legends car
+- Tutorial explains: Slipstream lets you move 2 extra spaces (doesn't count for corner checks)
+- Player accepts slipstream (prompted)
+
+**Lesson 6: Stress Cards**
+- Player draws a Stress card into their hand
+- Tutorial explains: Stress cards can be played like normal cards, but their value is random — flip from the deck until you get a Speed card
+- Player plays a hand that includes the Stress card
+- Tutorial shows the random resolution
+
+**Lesson 7: Putting It All Together**
+- Tutorial disables prompts and lets the player finish the remaining laps solo
+- A summary overlay shows all mechanics covered with one-line reminders
+- Tutorial ends with congratulations and the player's qualifying time
+- Option to start a real qualifying session or return home
+
+### Rules Reference Design
+
+The rules reference is a **slide-out panel** accessible from a persistent "Rules" button visible on all screens (home, lobby, game). It does NOT navigate away from the current page — it overlays as a side panel or modal.
+
+**Content structure (sections):**
+
+1. **Overview** — What is Heat? How do you win? (2–3 sentences)
+2. **Turn Structure** — The 9 phases listed with 1-sentence descriptions
+3. **Gears** — Gear levels, card count per gear, special abilities per gear
+4. **Cards** — Speed cards (values), Heat cards (penalty/resource), Stress cards (random), Upgrade cards
+5. **Movement** — How speed converts to spaces, occupied space rules
+6. **Corners** — Speed limits, Heat payment, spinout consequence
+7. **React Phase** — Cooldown (by gear), Boost (4th gear), Adrenaline (last place bonus)
+8. **Slipstream** — Proximity rule (within 2 spaces), +2 spaces, does not count for corner checks
+9. **Deck Management** — Draw pile, discard pile, engine zone, hand replenishment, shuffle trigger
+10. **Winning** — Crossing the finish line after the target number of laps, tie-breaking by position
+
+Each section is expandable/collapsible. The panel remembers which sections are open. A search/filter bar at the top lets players type keywords (e.g., "corner", "boost", "stress") to jump to the relevant section.
+
+### Mid-Game Contextual Help
+
+During gameplay, each phase should display a small **"?"** tooltip icon next to the phase name. Clicking it opens the rules reference pre-scrolled to the relevant section for that phase. Examples:
+- During "Shift Gears" phase → Opens rules reference to Gears section
+- During "Check Corner" phase → Opens rules reference to Corners section
+- During "React" phase → Opens rules reference to React Phase section
+
+This provides just-in-time help without the player needing to search.
+
+## Technical Approach
+
+### Tutorial Engine
+
+- A `TutorialManager` class (client-side only) wraps the existing game engine
+- The tutorial scenario is a predefined JSON configuration that specifies:
+  - Track data (short tutorial track or subset of USA)
+  - Scripted Legends positions (for slipstream lesson)
+  - Per-lesson triggers: which phase/round activates which lesson overlay
+  - Forced hand contents for specific lessons (so the right cards are available)
+  - Highlight targets: which UI elements to highlight per lesson step
+- The tutorial runs a real qualifying session — the engine processes turns normally
+- The `TutorialManager` intercepts before each phase to show the lesson overlay
+- Player actions are real (they actually shift gears, play cards, etc.)
+- Between lessons, the tutorial auto-advances through phases the player hasn't learned yet
+
+### Tutorial UI Components
+
+- `TutorialOverlay` — Full-screen semi-transparent overlay with lesson content
+- `TutorialHighlight` — Draws attention to specific UI elements (gear selector, hand, engine zone) using a spotlight/cutout effect
+- `TutorialPrompt` — Arrow pointing to the element the player should interact with, with instructional text
+- `TutorialProgress` — Progress bar showing lessons completed (e.g., "3/7")
+- These components are only rendered when a tutorial session is active
+
+### Rules Reference Components
+
+- `RulesPanel` — Slide-out panel with sections, search, and collapse/expand
+- `RulesButton` — Persistent button on all pages that toggles the panel
+- `PhaseHelpIcon` — Small "?" next to phase names in the game UI, links to relevant section
+- Rules content is defined in a static data file (not hardcoded in JSX) for easy editing
+
+### Tutorial Track
+
+- If creating a custom tutorial track: a simple 3-corner oval, ~30 spaces, 1 lap
+- If reusing USA track: use only the first sector (truncate the track at a logical point)
+- The tutorial track should have at least one tight corner (low speed limit) and one fast section
+
+### State Persistence
+
+- Tutorial completion status stored in `localStorage` (`heat-tutorial-v1`)
+- Tracks which lessons have been completed (so the player can resume if they quit mid-tutorial)
+- On first visit (no profile, no tutorial completed), the home screen shows a prominent "Learn to Play" call-to-action
+- After completing the tutorial, the CTA changes to "Play Tutorial Again" in a less prominent position
+
+## Acceptance Criteria
+
+### Tutorial — Core Flow
+- [ ] A "Learn to Play" button on the home screen starts the interactive tutorial
+- [ ] The tutorial runs a real qualifying session with the game engine (not a mockup)
+- [ ] Lesson overlays appear at the correct phases, teaching one mechanic per lesson
+- [ ] The player makes real gameplay choices during lessons (shift gear, play cards, boost, cooldown, slipstream)
+- [ ] All 7 lessons are presented in order: Gears & Speed, Movement, Corners & Heat, Cooldown & Boost, Slipstream, Stress Cards, Free Play
+- [ ] The tutorial ends with a summary of all mechanics and the player's qualifying time
+- [ ] The player can skip the tutorial at any point ("Skip Tutorial" button)
+
+### Tutorial — UI
+- [ ] A highlight/spotlight effect draws attention to the relevant UI element for each lesson step
+- [ ] Directional prompts (arrows or pointers) indicate which element the player should interact with
+- [ ] A progress indicator shows the current lesson number and total (e.g., "Lesson 3 of 7")
+- [ ] The tutorial overlay does not block the highlighted UI element — the player can still interact with it
+- [ ] Lesson text is concise (2–4 sentences per step, not paragraphs)
+
+### Tutorial — Scenario
+- [ ] Lesson 1 forces the player to shift from 1st to 2nd gear, then play 2 speed cards
+- [ ] Lesson 3 presents a corner where the player's speed exceeds the limit, triggering Heat payment
+- [ ] Lesson 4 puts the player in a gear with Cooldown available, then later in 4th gear for Boost
+- [ ] Lesson 5 positions a Legends car so that slipstream is available after movement
+- [ ] Lesson 6 ensures a Stress card is in the player's hand for that turn
+
+### Tutorial — Persistence
+- [ ] Tutorial completion status is stored in `localStorage` under `heat-tutorial-v1`
+- [ ] If the player quits mid-tutorial, they can resume from the last completed lesson
+- [ ] First-time visitors see a prominent "Learn to Play" CTA on the home screen
+- [ ] After completing the tutorial, the CTA is replaced with a smaller "Replay Tutorial" link
+- [ ] The tutorial is always accessible from the home screen regardless of completion status
+
+### Rules Reference — Panel
+- [ ] A "Rules" button is visible on the home, lobby, and game screens
+- [ ] Clicking "Rules" opens a slide-out panel (or modal) without navigating away from the current page
+- [ ] The panel contains all 10 sections: Overview, Turn Structure, Gears, Cards, Movement, Corners, React Phase, Slipstream, Deck Management, Winning
+- [ ] Each section is expandable/collapsible with a header click
+- [ ] A search/filter input at the top of the panel filters sections by keyword
+- [ ] The panel remembers which sections are expanded (within the current session)
+- [ ] The panel can be closed by clicking outside it, pressing Escape, or clicking the close button
+
+### Rules Reference — Contextual Help
+- [ ] During gameplay, a "?" icon appears next to the current phase name in the top bar
+- [ ] Clicking the "?" icon opens the rules reference pre-scrolled to the relevant section
+- [ ] Each of the 9 game phases maps to the correct rules reference section
+- [ ] The contextual "?" is not shown outside of active gameplay (home, lobby screens)
+
+### Regression
+- [ ] All existing tests continue to pass
+- [ ] The tutorial does not affect normal qualifying or multiplayer game flows
+- [ ] Existing players who have never done the tutorial can continue playing as before
+- [ ] The rules reference panel works correctly even when no game is active (static content)
