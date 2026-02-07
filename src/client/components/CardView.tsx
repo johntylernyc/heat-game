@@ -8,7 +8,7 @@
  */
 
 import type { Card } from '../../types.js';
-import { isPlayableCard, getCardSpeedValue } from '../../cards.js';
+import { getCardSpeedValue } from '../../cards.js';
 
 export interface CardViewProps {
   card: Card;
@@ -72,7 +72,6 @@ function getCardLabel(card: Card): { primary: string; secondary: string } {
 }
 
 export function CardView({ card, selected, disabled, onClick }: CardViewProps) {
-  const playable = isPlayableCard(card);
   const { primary, secondary } = getCardLabel(card);
 
   const style: React.CSSProperties = {
@@ -88,9 +87,6 @@ export function CardView({ card, selected, disabled, onClick }: CardViewProps) {
       cursor: 'not-allowed',
       pointerEvents: 'none' as const,
     }),
-    ...(!playable && !disabled && {
-      opacity: 0.5,
-    }),
   };
 
   return (
@@ -102,7 +98,7 @@ export function CardView({ card, selected, disabled, onClick }: CardViewProps) {
       aria-label={`${card.type} card${card.type === 'speed' ? ` value ${card.value}` : ''}`}
       aria-pressed={selected}
       data-card-type={card.type}
-      data-playable={playable}
+      data-playable={!disabled}
     >
       <span style={{ fontSize: card.type === 'speed' ? 28 : 20, lineHeight: 1 }}>
         {primary}

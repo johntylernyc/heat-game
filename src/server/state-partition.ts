@@ -8,6 +8,7 @@
  */
 
 import type { GameState, PlayerState } from '../types.js';
+import { isPlayableCard } from '../cards.js';
 import type {
   ClientGameState,
   PublicPlayerState,
@@ -55,13 +56,22 @@ export function partitionState(
  * Draw pile is count-only (player shouldn't see upcoming cards).
  */
 export function buildPrivateState(player: PlayerState): PrivatePlayerState {
+  const hand = [...player.hand];
+  const playableIndices: number[] = [];
+  for (let i = 0; i < hand.length; i++) {
+    if (isPlayableCard(hand[i])) {
+      playableIndices.push(i);
+    }
+  }
+
   return {
     id: player.id,
     gear: player.gear,
     position: player.position,
     lapCount: player.lapCount,
     speed: player.speed,
-    hand: [...player.hand],
+    hand,
+    playableIndices,
     drawPileCount: player.drawPile.length,
     discardPile: [...player.discardPile],
     engineZone: [...player.engineZone],

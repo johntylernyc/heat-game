@@ -6,11 +6,11 @@
  */
 
 import type { Card } from '../../types.js';
-import { isPlayableCard } from '../../cards.js';
 import { CardView } from './CardView.js';
 
 export interface HandDisplayProps {
   cards: Card[];
+  playableIndices: number[];
   selectedIndices: number[];
   onToggleCard: (index: number) => void;
   disabled?: boolean;
@@ -37,16 +37,17 @@ const headerStyle: React.CSSProperties = {
 
 export function HandDisplay({
   cards,
+  playableIndices,
   selectedIndices,
   onToggleCard,
   disabled,
 }: HandDisplayProps) {
-  const playableCount = cards.filter(isPlayableCard).length;
+  const playableSet = new Set(playableIndices);
 
   return (
     <div data-testid="hand-display">
       <div style={headerStyle}>
-        Hand ({cards.length} cards, {playableCount} playable)
+        Hand ({cards.length} cards, {playableIndices.length} playable)
       </div>
       <div style={containerStyle} role="group" aria-label="Cards in hand">
         {cards.map((card, index) => (
@@ -54,7 +55,7 @@ export function HandDisplay({
             key={index}
             card={card}
             selected={selectedIndices.includes(index)}
-            disabled={disabled || !isPlayableCard(card)}
+            disabled={disabled || !playableSet.has(index)}
             onClick={() => onToggleCard(index)}
           />
         ))}

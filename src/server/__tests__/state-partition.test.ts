@@ -57,6 +57,33 @@ describe('buildPrivateState', () => {
     priv.hand.push({ type: 'heat' });
     expect(state.players[0].hand).toHaveLength(7);
   });
+
+  it('includes playableIndices matching only playable cards', () => {
+    const state = makeGameState();
+    const priv = buildPrivateState(state.players[0]);
+
+    // Every index in playableIndices should point to a playable card
+    for (const idx of priv.playableIndices) {
+      const card = priv.hand[idx];
+      expect(
+        card.type === 'speed' ||
+        card.type === 'stress' ||
+        (card.type === 'upgrade' && (card.subtype === 'speed-0' || card.subtype === 'speed-5')),
+      ).toBe(true);
+    }
+
+    // Every non-playable card should NOT be in playableIndices
+    for (let i = 0; i < priv.hand.length; i++) {
+      const card = priv.hand[i];
+      const isPlayable =
+        card.type === 'speed' ||
+        card.type === 'stress' ||
+        (card.type === 'upgrade' && (card.subtype === 'speed-0' || card.subtype === 'speed-5'));
+      if (!isPlayable) {
+        expect(priv.playableIndices).not.toContain(i);
+      }
+    }
+  });
 });
 
 describe('partitionState', () => {

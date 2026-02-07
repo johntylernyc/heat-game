@@ -24,6 +24,7 @@ function makePrivateState(overrides: Partial<PrivatePlayerState> = {}): PrivateP
       { type: 'upgrade', subtype: 'speed-5' },
       { type: 'speed', value: 2 },
     ] as Card[],
+    playableIndices: [0, 1, 2, 4, 5, 6], // all except index 3 (heat)
     drawPileCount: 8,
     discardPile: [],
     engineZone: Array.from({ length: 6 }, () => ({ type: 'heat' as const })),

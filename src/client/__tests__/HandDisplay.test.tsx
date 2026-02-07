@@ -14,10 +14,12 @@ describe('HandDisplay', () => {
     { type: 'stress' },
     { type: 'upgrade', subtype: 'speed-5' },
   ];
+  // Indices 0,1,3,4 are playable; index 2 (heat) is not
+  const playableIndices = [0, 1, 3, 4];
 
   it('renders all cards in hand', () => {
     render(
-      <HandDisplay cards={hand} selectedIndices={[]} onToggleCard={() => {}} />,
+      <HandDisplay cards={hand} playableIndices={playableIndices} selectedIndices={[]} onToggleCard={() => {}} />,
     );
     const buttons = screen.getAllByRole('button');
     expect(buttons).toHaveLength(5);
@@ -25,7 +27,7 @@ describe('HandDisplay', () => {
 
   it('shows card count and playable count in header', () => {
     render(
-      <HandDisplay cards={hand} selectedIndices={[]} onToggleCard={() => {}} />,
+      <HandDisplay cards={hand} playableIndices={playableIndices} selectedIndices={[]} onToggleCard={() => {}} />,
     );
     const display = screen.getByTestId('hand-display');
     expect(display.textContent).toContain('5 cards');
@@ -35,7 +37,7 @@ describe('HandDisplay', () => {
   it('calls onToggleCard with card index', () => {
     const onToggle = vi.fn();
     render(
-      <HandDisplay cards={hand} selectedIndices={[]} onToggleCard={onToggle} />,
+      <HandDisplay cards={hand} playableIndices={playableIndices} selectedIndices={[]} onToggleCard={onToggle} />,
     );
     const buttons = screen.getAllByRole('button');
     fireEvent.click(buttons[0]);
@@ -44,7 +46,7 @@ describe('HandDisplay', () => {
 
   it('marks heat cards as disabled', () => {
     render(
-      <HandDisplay cards={hand} selectedIndices={[]} onToggleCard={() => {}} />,
+      <HandDisplay cards={hand} playableIndices={playableIndices} selectedIndices={[]} onToggleCard={() => {}} />,
     );
     const buttons = screen.getAllByRole('button');
     // Heat card at index 2
@@ -53,7 +55,7 @@ describe('HandDisplay', () => {
 
   it('highlights selected cards', () => {
     render(
-      <HandDisplay cards={hand} selectedIndices={[0, 1]} onToggleCard={() => {}} />,
+      <HandDisplay cards={hand} playableIndices={playableIndices} selectedIndices={[0, 1]} onToggleCard={() => {}} />,
     );
     const buttons = screen.getAllByRole('button');
     expect(buttons[0].getAttribute('aria-pressed')).toBe('true');
@@ -63,17 +65,17 @@ describe('HandDisplay', () => {
 
   it('disables all cards when disabled', () => {
     render(
-      <HandDisplay cards={hand} selectedIndices={[]} onToggleCard={() => {}} disabled />,
+      <HandDisplay cards={hand} playableIndices={playableIndices} selectedIndices={[]} onToggleCard={() => {}} disabled />,
     );
     const buttons = screen.getAllByRole('button');
-    buttons.forEach(button => {
+    buttons.forEach((button: HTMLElement) => {
       expect((button as HTMLButtonElement).disabled).toBe(true);
     });
   });
 
   it('shows empty message when no cards', () => {
     render(
-      <HandDisplay cards={[]} selectedIndices={[]} onToggleCard={() => {}} />,
+      <HandDisplay cards={[]} playableIndices={[]} selectedIndices={[]} onToggleCard={() => {}} />,
     );
     expect(screen.getByText('No cards in hand')).toBeTruthy();
   });

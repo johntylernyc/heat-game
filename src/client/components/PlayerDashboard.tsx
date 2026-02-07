@@ -10,7 +10,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { Gear, GamePhase } from '../../types.js';
 import { CARDS_PER_GEAR, COOLDOWN_PER_GEAR } from '../../types.js';
-import { isPlayableCard } from '../../cards.js';
 import type { ClientGameState } from '../../server/types.js';
 import { PhaseIndicator } from './PhaseIndicator.js';
 import { GearSelector } from './GearSelector.js';
@@ -96,10 +95,11 @@ export function PlayerDashboard({
   }
 
   // Card selection toggle
+  const playableSet = useMemo(() => new Set(self.playableIndices), [self.playableIndices]);
+
   const toggleCard = useCallback((index: number) => {
     if (playConfirmed) return;
-    const card = self.hand[index];
-    if (!card || !isPlayableCard(card)) return;
+    if (!playableSet.has(index)) return;
 
     setSelectedCardIndices(prev => {
       if (prev.includes(index)) {
@@ -109,7 +109,7 @@ export function PlayerDashboard({
       if (prev.length >= maxCards) return prev;
       return [...prev, index];
     });
-  }, [self.hand, self.gear, playConfirmed]);
+  }, [self.gear, playConfirmed, playableSet]);
 
   // Confirm card play
   const handleConfirmPlay = useCallback(() => {
@@ -188,6 +188,7 @@ export function PlayerDashboard({
       {/* Hand Display */}
       <HandDisplay
         cards={self.hand}
+        playableIndices={self.playableIndices}
         selectedIndices={selectedCardIndices}
         onToggleCard={toggleCard}
         disabled={phaseGroup !== 'play-cards' && phaseGroup !== 'discard'}

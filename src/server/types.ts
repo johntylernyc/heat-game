@@ -300,6 +300,8 @@ export interface PrivatePlayerState {
   lapCount: number;
   speed: number;
   hand: Card[];
+  /** Indices into `hand` that are valid to play during the Play Cards phase. */
+  playableIndices: number[];
   drawPileCount: number;
   discardPile: Card[];
   engineZone: Card[];
